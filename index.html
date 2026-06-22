@@ -749,26 +749,28 @@ function closeSidebar(){ $('sidebar').classList.remove('open'); $('overlay').cla
 function renderDashboard() {
   const kontenSumme = konten.reduce((s,k)=> s + (Number(k.bestand)||0), 0);
   const wpSumme = wertpapiere.reduce((s,w)=> s + wpWert(w), 0);
-  const gesamt = kontenSumme + wpSumme;
+  const hausbau = Number((settings.extra||{}).hausbauAusgegeben)||0;
+  const gesamt = kontenSumme + wpSumme + hausbau;          // Hausbau-Ausgaben zählen als Vermögen (steckt im Haus)
   const st = berechneSteuer();
   const netto = st.zinsertrag + st.divBrutto - st.gesamt;
+  const kapMonat = kapitalNettoMonat();
   const haushaltNetto = haushaltNettoMonat();
-  const hausbau = Number((settings.extra||{}).hausbauAusgegeben)||0;
   const restschuldSum = krediteList().reduce((s,k)=> s + computeKredit(k).restschuld, 0);
-  const nettovermoegen = gesamt - restschuldSum;
+  const realesVermoegen = gesamt - restschuldSum;          // reales Gesamtvermögen = Vermögen − Kredite
   $('dash-stats').innerHTML = `
-    <div class="stat accent"><div class="label">💰 Gesamtvermögen</div><div class="value">${eur(gesamt)}</div><div class="sub">${konten.length} Konten · ${wertpapiere.length} Wertpapiere</div></div>
+    <div class="stat accent"><div class="label">💰 Gesamtvermögen</div><div class="value">${eur(gesamt)}</div><div class="sub">${konten.length} Konten · ${wertpapiere.length} WP${hausbau>0?' · inkl. Hausbau':''}</div></div>
+    ${restschuldSum>0?`<div class="stat accent"><div class="label">⚖️ Reales Gesamtvermögen</div><div class="value">${eur(realesVermoegen)}</div><div class="sub">Vermögen − Kredite (${eur(restschuldSum)})</div></div>`:''}
     <div class="stat"><div class="label">🏦 Konten</div><div class="value">${eur(kontenSumme)}</div><div class="sub">Zinsen p.a.: ${eur(st.zinsertrag)}</div></div>
     <div class="stat"><div class="label">📈 Wertpapiere</div><div class="value">${eur(wpSumme)}</div><div class="sub">Dividende p.a. (Prognose): ${eur(st.divBrutto)}</div></div>
-    <div class="stat"><div class="label">🧾 Steuer p.a. (Schätzung)</div><div class="value">${eur(st.gesamt)}</div><div class="sub">Netto-Ertrag: ${eur(netto)}</div></div>
-    ${haushaltNetto>0?`<div class="stat"><div class="label">💶 Haushaltseinkommen / Monat</div><div class="value">${eur(haushaltNetto)}</div><div class="sub">netto inkl. Kindergeld</div></div>`:''}
-    ${hausbau>0?`<div class="stat"><div class="label">🏗️ Für Hausbau ausgegeben</div><div class="value">${eur(hausbau)}</div></div>`:''}
+    ${hausbau>0?`<div class="stat"><div class="label">🏗️ Für Hausbau ausgegeben</div><div class="value">${eur(hausbau)}</div><div class="sub">im Gesamtvermögen enthalten</div></div>`:''}
     ${restschuldSum>0?`<div class="stat"><div class="label">💳 Verbindlichkeiten</div><div class="value neg">−${eur(restschuldSum)}</div></div>`:''}
-    ${restschuldSum>0?`<div class="stat"><div class="label">⚖️ Nettovermögen</div><div class="value">${eur(nettovermoegen)}</div><div class="sub">Vermögen − Schulden</div></div>`:''}`;
+    <div class="stat"><div class="label">🧾 Steuer p.a. (Schätzung)</div><div class="value">${eur(st.gesamt)}</div><div class="sub">Kapitalertrag netto: ${eur(netto)}</div></div>
+    ${haushaltNetto>0?`<div class="stat"><div class="label">💶 Haushaltseinkommen / Monat</div><div class="value">${eur(haushaltNetto)}</div><div class="sub">netto, inkl. Kindergeld${kapMonat>0?` & ${eur(kapMonat)} Kapitalerträge`:''}</div></div>`:''}`;
 
   const rows = [
     ...konten.map(k=>({ label:k.name+(k.bank&&k.bank!=='— manuell —'?' · '+k.bank:''), wert:Number(k.bestand)||0, typ:'Konto' })),
     ...wertpapiere.map(w=>({ label:w.name, wert:wpWert(w), typ:w.typ==='etf'?'ETF':'Aktie' })),
+    ...(hausbau>0?[{ label:'Für Hausbau ausgegeben', wert:hausbau, typ:'Hausbau' }]:[]),
   ].sort((a,b)=>b.wert-a.wert);
   if (!rows.length) { $('dash-breakdown').innerHTML = emptyState('Noch keine Daten','Lege Konten und Wertpapiere an.'); return; }
   $('dash-breakdown').innerHTML = rows.map(r=>{
@@ -1131,11 +1133,17 @@ function nettoEffektiv(p, kinder) {
   if (p.nettoOverride!=='' && p.nettoOverride!=null) return Number(p.nettoOverride);
   return computeNetto({ ...p, kinder }).netto;
 }
+// Zins- & Dividendenerträge NACH Steuern, pro Monat
+function kapitalNettoMonat() {
+  const s = berechneSteuer();
+  return Math.max(0, (s.zinsertrag + s.divBrutto - s.gesamt) / 12);
+}
 function haushaltNettoMonat() {
   const ex = settings.extra || {};
   let sum = 0;
   if (Array.isArray(ex.income)) ex.income.forEach(p => { sum += nettoEffektiv(p, ex.kinderAnzahl||0); });
   sum += Number(ex.kindergeld)||0;
+  sum += kapitalNettoMonat();        // Zinsen + Dividenden nach Steuern zum Einkommen
   return sum;
 }
 
@@ -1193,8 +1201,9 @@ function recomputeEinkommen() {
     if (box) box.innerHTML = nettoBreakdownHtml(r, p.nettoOverride);
   });
   const kg = num($('ek-kindergeld').value);
-  $('ek-haushalt-netto').textContent = eur(haus + kg);
-  $('ek-haushalt-sub').textContent = `${ekPersons.length} Einkommen + ${eur(kg)} Kindergeld`;
+  const kap = kapitalNettoMonat();
+  $('ek-haushalt-netto').textContent = eur(haus + kg + kap);
+  $('ek-haushalt-sub').textContent = `${ekPersons.length} Erwerbseinkommen + ${eur(kg)} Kindergeld + ${eur(kap)} Kapitalerträge (netto)`;
 }
 function nettoBreakdownHtml(r, override) {
   const ov = (override!==''&&override!=null);

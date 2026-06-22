@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Finanzen &amp; Vermögen</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💰</text></svg>">
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#047857">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Finanzen">
+
+<style>
+  :root {
+    --primary:#047857; --primary-dark:#065f46; --accent:#10b981;
+    --danger:#dc2626; --success:#16a34a; --warning:#d97706;
+    --bg:#f1f5f9; --card:#fff; --border:#e2e8f0; --text:#0f172a; --muted:#64748b;
+    --sidebar:#0f172a; --sidebar-soft:#1e293b;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+
+  /* SCREENS */
+  #login-screen, #config-screen { display:none; align-items:center; justify-content:center; min-height:100vh; padding:24px; }
+  #login-screen { background:linear-gradient(135deg,#0f172a 0%,#047857 100%); }
+  .login-card { background:white; border-radius:20px; padding:40px 36px; max-width:380px; width:100%; box-shadow:0 24px 64px rgba(0,0,0,0.4); text-align:center; }
+  .login-logo { font-size:3.5rem; margin-bottom:10px; }
+  .login-title { font-size:1.5rem; font-weight:700; margin-bottom:4px; }
+  .login-sub { color:var(--muted); font-size:0.9rem; margin-bottom:24px; }
+  .login-error { color:var(--danger); font-size:0.85rem; margin-bottom:12px; display:none; padding:8px 12px; background:#fef2f2; border-radius:6px; border:1px solid #fecaca; }
+
+  .config-card { background:white; border-radius:16px; padding:32px; max-width:680px; width:100%; box-shadow:0 8px 32px rgba(0,0,0,0.12); }
+  .config-card h1 { font-size:1.5rem; margin-bottom:6px; }
+  .config-card > p { color:var(--muted); margin-bottom:18px; line-height:1.6; font-size:0.92rem; }
+  .steps { background:var(--bg); border-radius:10px; padding:16px 16px 16px 34px; margin-bottom:18px; }
+  .steps li { margin-bottom:8px; font-size:0.88rem; line-height:1.5; }
+  .sql-block { background:#0f172a; color:#e2e8f0; border-radius:8px; padding:14px; font-family:monospace; font-size:0.72rem; line-height:1.55; margin:8px 0 12px; white-space:pre; overflow-x:auto; max-height:240px; }
+  .copy-btn { background:#334155; color:#e2e8f0; border:none; border-radius:6px; padding:5px 12px; font-size:0.8rem; cursor:pointer; margin-bottom:12px; }
+  .copy-btn:hover { background:#475569; }
+
+  .form-group { margin-bottom:14px; }
+  label { display:block; font-size:0.82rem; font-weight:500; color:var(--muted); margin-bottom:5px; }
+  input, select, textarea { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:8px; font-size:0.92rem; font-family:inherit; background:white; color:var(--text); }
+  input:focus, select:focus, textarea:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(4,120,87,0.12); }
+  textarea { resize:vertical; min-height:70px; }
+  .row { display:flex; gap:12px; } .row > * { flex:1; }
+  .form-error { color:var(--danger); font-size:0.85rem; margin-bottom:10px; display:none; padding:8px 12px; background:#fef2f2; border-radius:6px; border:1px solid #fecaca; }
+
+  /* SIDEBAR */
+  .sidebar { position:fixed; left:0; top:0; bottom:0; width:240px; background:var(--sidebar); display:flex; flex-direction:column; z-index:200; box-shadow:3px 0 16px rgba(0,0,0,0.15); }
+  .sidebar-brand { padding:22px 18px 16px; font-size:1.1rem; font-weight:700; color:white; border-bottom:1px solid rgba(255,255,255,0.1); display:flex; align-items:center; gap:8px; }
+  .sidebar-nav { display:flex; flex-direction:column; padding:10px 0; flex:1; overflow-y:auto; }
+  .nav-link { padding:13px 20px; color:rgba(255,255,255,0.72); border:none; border-left:3px solid transparent; background:none; cursor:pointer; text-align:left; font-size:0.92rem; display:flex; align-items:center; gap:11px; transition:all 0.15s; width:100%; font-family:inherit; }
+  .nav-link:hover { background:rgba(255,255,255,0.08); color:white; }
+  .nav-link.active { background:rgba(16,185,129,0.18); color:white; font-weight:600; border-left-color:var(--accent); }
+  .sidebar-footer { padding:14px 16px; border-top:1px solid rgba(255,255,255,0.1); }
+  .sidebar-logout { background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:white; padding:9px 12px; border-radius:8px; cursor:pointer; font-size:0.85rem; width:100%; font-family:inherit; }
+  .sidebar-logout:hover { background:rgba(255,255,255,0.18); }
+
+  .main-content { margin-left:240px; min-height:100vh; }
+  .mobile-topbar { display:none; background:var(--sidebar); color:white; padding:0 12px; height:56px; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:150; }
+  .hamburger { background:none; border:none; color:white; font-size:1.6rem; cursor:pointer; padding:6px; line-height:1; }
+  .topbar-brand { font-weight:700; }
+  .sidebar-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:199; }
+  .sidebar-overlay.visible { display:block; }
+
+  .view { display:none; padding:24px; max-width:1180px; margin:0 auto; }
+  .view.active { display:block; }
+  .view-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; flex-wrap:wrap; gap:12px; }
+  h1 { font-size:1.45rem; font-weight:700; } h2 { font-size:1.15rem; font-weight:600; } h3 { font-size:1rem; font-weight:600; }
+
+  .card { background:var(--card); border-radius:12px; border:1px solid var(--border); padding:20px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,0.05); }
+
+  /* STAT CARDS */
+  .stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px; margin-bottom:18px; }
+  .stat { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:18px; box-shadow:0 1px 3px rgba(0,0,0,0.05); }
+  .stat .label { font-size:0.8rem; color:var(--muted); margin-bottom:6px; display:flex; align-items:center; gap:6px; }
+  .stat .value { font-size:1.5rem; font-weight:700; letter-spacing:-0.5px; }
+  .stat .sub { font-size:0.78rem; color:var(--muted); margin-top:4px; }
+  .stat.accent { background:linear-gradient(135deg,#047857,#10b981); color:white; border:none; }
+  .stat.accent .label, .stat.accent .sub { color:rgba(255,255,255,0.85); }
+
+  /* BUTTONS */
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; border-radius:8px; border:none; cursor:pointer; font-size:0.875rem; font-weight:500; transition:all 0.15s; font-family:inherit; }
+  .btn:disabled { opacity:0.5; cursor:not-allowed; }
+  .btn-primary { background:var(--primary); color:white; } .btn-primary:hover:not(:disabled){ background:var(--primary-dark); }
+  .btn-danger { background:var(--danger); color:white; } .btn-danger:hover:not(:disabled){ background:#b91c1c; }
+  .btn-ghost { background:transparent; color:var(--muted); border:1px solid var(--border); } .btn-ghost:hover:not(:disabled){ background:var(--bg); }
+  .btn-sm { padding:5px 10px; font-size:0.8rem; }
+
+  /* TABLE */
+  .table-wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:0.9rem; }
+  th { text-align:left; padding:10px 12px; color:var(--muted); font-weight:600; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.03em; border-bottom:2px solid var(--border); white-space:nowrap; }
+  td { padding:11px 12px; border-bottom:1px solid var(--border); }
+  tr:last-child td { border-bottom:none; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .row-actions { display:flex; gap:6px; justify-content:flex-end; }
+  .empty { text-align:center; padding:40px 20px; color:var(--muted); }
+  .empty .ico { font-size:2.5rem; display:block; margin-bottom:8px; }
+  .badge { display:inline-flex; padding:3px 9px; border-radius:999px; font-size:0.72rem; font-weight:600; }
+  .badge-aktie { background:#dbeafe; color:#1d4ed8; } .badge-etf { background:#dcfce7; color:#15803d; }
+  .pos { color:var(--success); } .neg { color:var(--danger); }
+
+  /* MODAL */
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(15,23,42,0.55); z-index:300; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
+  .modal-overlay.open { display:flex; }
+  .modal { background:white; border-radius:16px; padding:24px; max-width:560px; width:100%; box-shadow:0 24px 64px rgba(0,0,0,0.3); }
+  .modal-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
+  .modal-close { background:none; border:none; font-size:1.5rem; cursor:pointer; color:var(--muted); line-height:1; }
+  .modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
+
+  .hint { font-size:0.8rem; color:var(--muted); margin-top:4px; line-height:1.45; }
+  .info-box { background:#ecfdf5; border:1px solid #a7f3d0; border-radius:8px; padding:11px 14px; margin-bottom:16px; font-size:0.85rem; color:#065f46; line-height:1.5; }
+  .warn-box { background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:11px 14px; margin-bottom:16px; font-size:0.85rem; color:#92400e; line-height:1.5; }
+
+  .tax-line { display:flex; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--border); font-size:0.92rem; }
+  .tax-line.total { font-weight:700; font-size:1.05rem; border-bottom:none; border-top:2px solid var(--text); margin-top:4px; padding-top:12px; }
+  .tax-line .muted { color:var(--muted); }
+
+  .div-year-row { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+  .div-year-row input { flex:1; }
+
+  #toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--text); color:white; padding:12px 20px; border-radius:10px; font-size:0.9rem; z-index:500; opacity:0; pointer-events:none; transition:opacity 0.25s, transform 0.25s; box-shadow:0 8px 24px rgba(0,0,0,0.3); }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(-6px); }
+
+  .loading-screen { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; gap:14px; color:var(--muted); }
+  .spinner { width:38px; height:38px; border:4px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.7s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  @media (max-width:768px) {
+    .sidebar { transform:translateX(-100%); transition:transform 0.28s ease; }
+    .sidebar.open { transform:translateX(0); box-shadow:4px 0 24px rgba(0,0,0,0.3); }
+    .main-content { margin-left:0; }
+    .mobile-topbar { display:flex; }
+    .view { padding:14px; }
+    .row { flex-direction:column; gap:0; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ==================== LOADING ==================== -->
+<div id="loading-screen" class="loading-screen">
+  <div class="spinner"></div>
+  <div>Lade…</div>
+</div>
+
+<!-- ==================== LOGIN ==================== -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">💰</div>
+    <div class="login-title">Finanzen &amp; Vermögen</div>
+    <div class="login-sub" id="login-sub">Bitte Passwort eingeben</div>
+    <div class="login-error" id="login-error">❌ Falsches Passwort</div>
+    <div class="form-group" style="text-align:left">
+      <input id="login-pw" type="password" placeholder="Passwort…" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;font-size:1rem" onclick="doLogin()">🔓 Anmelden</button>
+  </div>
+</div>
+
+<!-- ==================== CONFIG (Supabase) ==================== -->
+<div id="config-screen">
+  <div class="config-card">
+    <h1>☁️ Einmalige Einrichtung</h1>
+    <p>Damit deine Daten zwischen Laptop und PC synchronisieren, brauchst du eine kostenlose Supabase-Datenbank.</p>
+    <ol class="steps">
+      <li>Auf <strong>supabase.com</strong> kostenlos registrieren → <strong>New Project</strong> anlegen.</li>
+      <li>Links im Menü auf <strong>SQL Editor</strong> → unten stehenden Code einfügen → <strong>Run</strong>.</li>
+      <li>Links auf <strong>Project Settings → API</strong>: <em>Project URL</em> und <em>anon public key</em> kopieren und unten einsetzen.</li>
+    </ol>
+    <button class="copy-btn" onclick="copySql()">📋 SQL kopieren</button>
+    <div class="sql-block" id="sql-text"></div>
+    <div class="form-group"><label>Project URL</label><input id="cfg-url" placeholder="https://xxxxx.supabase.co"></div>
+    <div class="form-group"><label>anon public key</label><input id="cfg-key" placeholder="eyJhbGci…"></div>
+    <div class="form-error" id="cfg-error"></div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px" onclick="saveConfig()">✅ Verbinden</button>
+  </div>
+</div>
+
+<!-- ==================== APP ==================== -->
+<div id="app" style="display:none">
+  <div class="sidebar-overlay" id="overlay" onclick="closeSidebar()"></div>
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">💰 Finanzen</div>
+    <nav class="sidebar-nav">
+      <button class="nav-link active" data-view="dashboard" onclick="showView('dashboard')">📊 Übersicht</button>
+      <button class="nav-link" data-view="konten" onclick="showView('konten')">🏦 Konten</button>
+      <button class="nav-link" data-view="wertpapiere" onclick="showView('wertpapiere')">📈 Aktien &amp; ETFs</button>
+      <button class="nav-link" data-view="dividenden" onclick="showView('dividenden')">💵 Dividenden</button>
+      <button class="nav-link" data-view="steuer" onclick="showView('steuer')">🧾 Steuer</button>
+      <button class="nav-link" data-view="einstellungen" onclick="showView('einstellungen')">⚙️ Einstellungen</button>
+    </nav>
+    <div class="sidebar-footer">
+      <button class="sidebar-logout" onclick="logout()">🔒 Abmelden</button>
+    </div>
+  </aside>
+
+  <div class="mobile-topbar">
+    <button class="hamburger" onclick="openSidebar()">☰</button>
+    <span class="topbar-brand">💰 Finanzen</span>
+    <span style="width:32px"></span>
+  </div>
+
+  <main class="main-content">
+
+    <!-- ÜBERSICHT -->
+    <section class="view active" id="view-dashboard">
+      <div class="view-head"><h1>📊 Übersicht</h1>
+        <button class="btn btn-ghost btn-sm" onclick="reloadAll()">🔄 Aktualisieren</button>
+      </div>
+      <div class="stats-grid" id="dash-stats"></div>
+      <div class="card">
+        <h2 style="margin-bottom:14px">Vermögensaufteilung</h2>
+        <div id="dash-breakdown"></div>
+      </div>
+    </section>
+
+    <!-- KONTEN -->
+    <section class="view" id="view-konten">
+      <div class="view-head"><h1>🏦 Konten</h1>
+        <button class="btn btn-primary" onclick="openKontoModal()">＋ Konto hinzufügen</button>
+      </div>
+      <div class="card"><div class="table-wrap"><table>
+        <thead><tr><th>Name</th><th>Bank</th><th class="num">Bestand</th><th class="num">Zins p.a.</th><th class="num">Zinsertrag/Jahr</th><th></th></tr></thead>
+        <tbody id="konten-body"></tbody>
+      </table></div></div>
+    </section>
+
+    <!-- WERTPAPIERE -->
+    <section class="view" id="view-wertpapiere">
+      <div class="view-head"><h1>📈 Aktien &amp; ETFs</h1>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" onclick="fetchAllPrices()" id="btn-fetch-prices">🔄 Kurse abrufen</button>
+          <button class="btn btn-primary" onclick="openWpModal()">＋ Wertpapier hinzufügen</button>
+        </div>
+      </div>
+      <div class="card"><div class="table-wrap"><table>
+        <thead><tr><th>Name</th><th>Typ</th><th class="num">Anzahl</th><th class="num">Kurs</th><th class="num">Wert</th><th class="num">G/V</th><th></th></tr></thead>
+        <tbody id="wp-body"></tbody>
+      </table></div></div>
+    </section>
+
+    <!-- DIVIDENDEN -->
+    <section class="view" id="view-dividenden">
+      <div class="view-head"><h1>💵 Dividenden &amp; Prognose</h1></div>
+      <div class="info-box">📈 <strong>Prognose:</strong> Aus den erfassten Dividenden-Jahren (bis zu 10) wird ein Durchschnitt gebildet und als erwartete Jahres-Dividende in die Zukunft fortgeschrieben.</div>
+      <div id="div-list"></div>
+    </section>
+
+    <!-- STEUER -->
+    <section class="view" id="view-steuer">
+      <div class="view-head"><h1>🧾 Steuer-Schätzung</h1></div>
+      <div class="warn-box">⚠️ Unverbindliche Schätzung der deutschen Abgeltungsteuer (25 % + Soli + ggf. Kirchensteuer) auf Zins- und Dividendenerträge. Vorabpauschale auf thesaurierende Fonds ist <strong>nicht</strong> enthalten. Keine Steuerberatung.</div>
+      <div class="card"><div id="steuer-detail"></div></div>
+    </section>
+
+    <!-- EINSTELLUNGEN -->
+    <section class="view" id="view-einstellungen">
+      <div class="view-head"><h1>⚙️ Einstellungen</h1></div>
+      <div class="card">
+        <h2 style="margin-bottom:14px">Steuerliche Angaben</h2>
+        <div class="form-group">
+          <label>Familienstand (für Sparerpauschbetrag)</label>
+          <select id="set-familienstand">
+            <option value="ledig">Ledig — 1.000 € Freibetrag</option>
+            <option value="verheiratet">Verheiratet (zusammen) — 2.000 € Freibetrag</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label><input type="checkbox" id="set-kirchensteuer" style="width:auto;margin-right:6px"> Kirchensteuerpflichtig</label>
+        </div>
+        <div class="form-group" id="kist-satz-group">
+          <label>Kirchensteuersatz</label>
+          <select id="set-kirchensteuersatz">
+            <option value="0.09">9 % (die meisten Bundesländer)</option>
+            <option value="0.08">8 % (Bayern, Baden-Württemberg)</option>
+          </select>
+        </div>
+      </div>
+      <div class="card">
+        <h2 style="margin-bottom:6px">Automatischer Kurs-/Dividenden-Abruf</h2>
+        <p class="hint" style="margin-bottom:12px">Kostenlosen API-Schlüssel bei <strong>alphavantage.co/support/#api-key</strong> holen (gratis, ohne Kreditkarte). Limit: ~25 Abrufe/Tag — für eine monatliche Prüfung reicht das.</p>
+        <div class="form-group"><label>Alpha-Vantage API-Schlüssel</label><input id="set-avkey" placeholder="z.B. ABCD1234…"></div>
+      </div>
+      <button class="btn btn-primary" onclick="saveSettings()">💾 Einstellungen speichern</button>
+      <div class="card" style="margin-top:24px">
+        <h3 style="margin-bottom:8px">Verbindung</h3>
+        <p class="hint" style="margin-bottom:12px">Supabase-Datenbank zurücksetzen (Daten bleiben in der Cloud erhalten, nur die Verbindung auf diesem Gerät wird neu eingerichtet).</p>
+        <button class="btn btn-ghost btn-sm" onclick="resetConnection()">🔌 Verbindung zurücksetzen</button>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ==================== MODALS ==================== -->
+<!-- Konto -->
+<div class="modal-overlay" id="konto-modal">
+  <div class="modal">
+    <div class="modal-head"><h2 id="konto-modal-title">Konto hinzufügen</h2><button class="modal-close" onclick="closeModal('konto-modal')">×</button></div>
+    <div class="form-group"><label>Bezeichnung *</label><input id="k-name" placeholder="z.B. Tagesgeld, Notgroschen"></div>
+    <div class="form-group"><label>Bank</label>
+      <select id="k-bank" onchange="onBankSelect()"></select>
+    </div>
+    <div class="row">
+      <div class="form-group"><label>Bestand (€) *</label><input id="k-bestand" type="number" step="0.01" placeholder="0,00"></div>
+      <div class="form-group"><label>Zinssatz (% p.a.)</label><input id="k-zins" type="number" step="0.01" placeholder="0,00">
+        <div class="hint" id="k-zins-hint"></div>
+      </div>
+    </div>
+    <div class="form-group"><label>Notiz</label><input id="k-notiz" placeholder="optional"></div>
+    <div class="form-error" id="k-error"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('konto-modal')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveKonto()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Wertpapier -->
+<div class="modal-overlay" id="wp-modal">
+  <div class="modal">
+    <div class="modal-head"><h2 id="wp-modal-title">Wertpapier hinzufügen</h2><button class="modal-close" onclick="closeModal('wp-modal')">×</button></div>
+    <div class="form-group"><label>Name *</label><input id="w-name" placeholder="z.B. Apple, MSCI World ETF"></div>
+    <div class="row">
+      <div class="form-group"><label>Typ</label>
+        <select id="w-typ" onchange="onTypChange()">
+          <option value="aktie">Einzelaktie</option>
+          <option value="etf">ETF / Fonds</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Teilfreistellung (%)</label><input id="w-teilfrei" type="number" step="1" placeholder="0">
+        <div class="hint">Aktien-ETF: 30 · Mischfonds: 15 · Einzelaktie: 0</div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="form-group"><label>Ticker-Symbol (für Auto-Abruf)</label><input id="w-ticker" placeholder="z.B. AAPL, SAP.DE">
+        <div class="hint">US-Börse: AAPL · Xetra: SAP.DE</div>
+      </div>
+      <div class="form-group"><label>ISIN (optional)</label><input id="w-isin" placeholder="z.B. US0378331005"></div>
+    </div>
+    <div class="row">
+      <div class="form-group"><label>Anzahl *</label><input id="w-anzahl" type="number" step="0.0001" placeholder="0"></div>
+      <div class="form-group"><label>Kaufkurs (€)</label><input id="w-kaufkurs" type="number" step="0.01" placeholder="0,00"></div>
+      <div class="form-group"><label>Akt. Kurs (€)</label><input id="w-kurs" type="number" step="0.01" placeholder="0,00"></div>
+    </div>
+    <div class="form-group"><label>Notiz</label><input id="w-notiz" placeholder="optional"></div>
+    <div class="form-error" id="w-error"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('wp-modal')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveWp()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Dividenden-Editor -->
+<div class="modal-overlay" id="div-modal">
+  <div class="modal">
+    <div class="modal-head"><h2 id="div-modal-title">Dividenden</h2><button class="modal-close" onclick="closeModal('div-modal')">×</button></div>
+    <p class="hint" style="margin-bottom:14px">Erhaltene Dividende (Gesamtbetrag) pro Jahr. Du kannst vergangene Jahre nachtragen.</p>
+    <button class="btn btn-ghost btn-sm" id="div-fetch-btn" onclick="fetchDividends()" style="margin-bottom:14px">🔄 Per API automatisch laden</button>
+    <div id="div-rows"></div>
+    <button class="btn btn-ghost btn-sm" onclick="addDivRow()">＋ Jahr hinzufügen</button>
+    <div class="form-error" id="div-error"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('div-modal')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveDividends()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Monatsabfrage -->
+<div class="modal-overlay" id="review-modal">
+  <div class="modal">
+    <div class="modal-head"><h2>📅 Neuer Monat</h2></div>
+    <p style="line-height:1.6;margin-bottom:8px">Es ist ein neuer Monat angebrochen (<strong id="review-month"></strong>).</p>
+    <p style="line-height:1.6;color:var(--muted);margin-bottom:18px">Hat sich etwas bei deinen <strong>Kontoständen</strong> oder <strong>Aktien/ETFs</strong> geändert? Aktualisiere die Werte, damit Prognose und Steuer stimmen.</p>
+    <div class="modal-actions" style="justify-content:space-between">
+      <button class="btn btn-ghost" onclick="dismissReview()">Alles unverändert</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" onclick="dismissReview();showView('konten')">🏦 Konten prüfen</button>
+        <button class="btn btn-primary" onclick="dismissReview();showView('wertpapiere')">📈 Wertpapiere prüfen</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* ============================================================
+   Konfiguration & globaler Zustand
+   ============================================================ */
+const BANKEN = [
+  { name:'— manuell —', zins:0 },
+  { name:'Trade Republic', zins:2.0 },
+  { name:'Scalable Capital', zins:2.0 },
+  { name:'ING', zins:1.5 },
+  { name:'DKB', zins:1.0 },
+  { name:'Comdirect', zins:1.5 },
+  { name:'Consorsbank', zins:2.0 },
+  { name:'C24 Bank', zins:2.5 },
+  { name:'Openbank', zins:2.0 },
+  { name:'Suresse Direkt Bank', zins:2.7 },
+  { name:'TF Bank', zins:2.5 },
+  { name:'Renault Bank direkt', zins:2.0 },
+  { name:'Volkswagen Bank', zins:1.5 },
+  { name:'1822direkt', zins:1.5 },
+  { name:'N26', zins:1.5 },
+  { name:'PSD Bank', zins:1.0 },
+  { name:'Commerzbank', zins:0.75 },
+  { name:'Deutsche Bank', zins:0.5 },
+  { name:'Sparkasse', zins:0.25 },
+  { name:'Volksbank', zins:0.25 },
+];
+
+const SQL = `-- Finanzen-App: Tabellen anlegen
+create table if not exists fin_konten (
+  id uuid primary key default gen_random_uuid(),
+  name text not null, bank text,
+  bestand numeric default 0, zinssatz numeric default 0,
+  notiz text, created_at timestamptz default now()
+);
+create table if not exists fin_wertpapiere (
+  id uuid primary key default gen_random_uuid(),
+  name text not null, isin text, ticker text,
+  typ text default 'aktie', anzahl numeric default 0,
+  kaufkurs numeric default 0, aktueller_kurs numeric,
+  teilfreistellung numeric default 0, notiz text,
+  created_at timestamptz default now()
+);
+create table if not exists fin_dividenden (
+  id uuid primary key default gen_random_uuid(),
+  wertpapier_id uuid references fin_wertpapiere(id) on delete cascade,
+  jahr int not null, betrag numeric default 0,
+  created_at timestamptz default now()
+);
+create table if not exists fin_einstellungen (
+  id int primary key default 1,
+  familienstand text default 'ledig',
+  kirchensteuer boolean default false,
+  kirchensteuersatz numeric default 0.09,
+  av_api_key text, last_review_month text, passwort text
+);
+insert into fin_einstellungen (id) values (1) on conflict (id) do nothing;
+alter table fin_konten enable row level security;
+alter table fin_wertpapiere enable row level security;
+alter table fin_dividenden enable row level security;
+alter table fin_einstellungen enable row level security;
+create policy anon_all on fin_konten for all using (true) with check (true);
+create policy anon_all on fin_wertpapiere for all using (true) with check (true);
+create policy anon_all on fin_dividenden for all using (true) with check (true);
+create policy anon_all on fin_einstellungen for all using (true) with check (true);`;
+
+let sb = null;
+let konten = [], wertpapiere = [], dividenden = [], settings = {};
+let editKontoId = null, editWpId = null, divWpId = null;
+
+/* ============================================================
+   Hilfsfunktionen
+   ============================================================ */
+const $ = (id) => document.getElementById(id);
+const eur = (n) => (Number(n)||0).toLocaleString('de-DE',{style:'currency',currency:'EUR'});
+const pct = (n) => (Number(n)||0).toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' %';
+const num = (v) => { const n = parseFloat(String(v).replace(',','.')); return isFinite(n) ? n : 0; };
+function toast(msg) { const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2600); }
+function copySql() { navigator.clipboard.writeText(SQL).then(()=>toast('SQL kopiert ✓')); }
+
+function wpWert(w) { const kurs = (w.aktueller_kurs!=null && w.aktueller_kurs!=='') ? Number(w.aktueller_kurs) : Number(w.kaufkurs); return (Number(w.anzahl)||0) * (kurs||0); }
+function wpEinstand(w) { return (Number(w.anzahl)||0) * (Number(w.kaufkurs)||0); }
+
+/* Durchschnittliche Dividende der letzten bis zu 10 Jahre für ein Wertpapier */
+function prognoseDividende(wpId) {
+  const rows = dividenden.filter(d => d.wertpapier_id === wpId);
+  if (!rows.length) return 0;
+  const curYear = new Date().getFullYear();
+  const recent = rows.filter(d => d.jahr >= curYear - 10 && d.jahr <= curYear);
+  const use = recent.length ? recent : rows;
+  const sum = use.reduce((s,d)=> s + (Number(d.betrag)||0), 0);
+  return sum / use.length;
+}
+
+/* ============================================================
+   Steuer-Berechnung (deutsche Abgeltungsteuer)
+   ============================================================ */
+function berechneSteuer() {
+  const zinsertrag = konten.reduce((s,k)=> s + (Number(k.bestand)||0) * (Number(k.zinssatz)||0)/100, 0);
+  let divBrutto = 0, divSteuerpflichtig = 0;
+  wertpapiere.forEach(w => {
+    const prog = prognoseDividende(w.id);
+    divBrutto += prog;
+    divSteuerpflichtig += prog * (1 - (Number(w.teilfreistellung)||0)/100);
+  });
+  const kapitalertraege = zinsertrag + divSteuerpflichtig;       // steuerlich relevant (nach Teilfreistellung)
+  const freibetrag = settings.familienstand === 'verheiratet' ? 2000 : 1000;
+  const steuerbasis = Math.max(0, kapitalertraege - freibetrag);
+  const k = settings.kirchensteuer ? Number(settings.kirchensteuersatz||0.09) : 0;
+  const est = steuerbasis / (4 + k);          // Abgeltungsteuer (mit Kirchensteuer-Ermäßigung gem. § 32d EStG)
+  const soli = est * 0.055;
+  const kist = est * k;
+  const gesamt = est + soli + kist;
+  return { zinsertrag, divBrutto, divSteuerpflichtig, kapitalertraege, freibetrag, steuerbasis, est, soli, kist, gesamt };
+}
+
+/* ============================================================
+   Initialisierung
+   ============================================================ */
+window.addEventListener('DOMContentLoaded', init);
+
+function init() {
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+  buildBankSelect();
+  $('sql-text').textContent = SQL;
+  const url = localStorage.getItem('fin_url');
+  const key = localStorage.getItem('fin_key');
+  if (!url || !key) { showScreen('config'); return; }
+  try {
+    sb = supabase.createClient(url, key);
+  } catch(e) { showScreen('config'); return; }
+  // Eingeloggt geblieben?
+  loadSettingsThenAuth();
+}
+
+function showScreen(s) {
+  $('loading-screen').style.display = 'none';
+  $('login-screen').style.display = s==='login' ? 'flex' : 'none';
+  $('config-screen').style.display = s==='config' ? 'flex' : 'none';
+  $('app').style.display = s==='app' ? 'block' : 'none';
+}
+
+async function loadSettingsThenAuth() {
+  showScreen('login'); // wird ggf. übersprungen
+  $('loading-screen').style.display = 'flex';
+  $('login-screen').style.display = 'none';
+  try {
+    const { data, error } = await sb.from('fin_einstellungen').select('*').eq('id',1).single();
+    if (error) throw error;
+    settings = data || {};
+  } catch(e) {
+    showScreen('config');
+    $('cfg-error').style.display='block';
+    $('cfg-error').textContent = 'Verbindung/Tabellen nicht gefunden. SQL ausgeführt? URL/Key korrekt?';
+    return;
+  }
+  // Passwort gesetzt?
+  if (!settings.passwort) {
+    $('login-sub').textContent = 'Lege ein Passwort fest (erstmalig)';
+  } else {
+    $('login-sub').textContent = 'Bitte Passwort eingeben';
+  }
+  // Session
+  if (sessionStorage.getItem('fin_auth') === '1') { enterApp(); return; }
+  showScreen('login');
+  $('login-pw').focus();
+}
+
+/* ============================================================
+   Config / Login
+   ============================================================ */
+function saveConfig() {
+  const url = $('cfg-url').value.trim();
+  const key = $('cfg-key').value.trim();
+  if (!url || !key) { $('cfg-error').style.display='block'; $('cfg-error').textContent='Bitte URL und Key eingeben.'; return; }
+  localStorage.setItem('fin_url', url);
+  localStorage.setItem('fin_key', key);
+  location.reload();
+}
+function resetConnection() {
+  if (!confirm('Verbindung auf diesem Gerät zurücksetzen? Die Daten in der Cloud bleiben erhalten.')) return;
+  localStorage.removeItem('fin_url'); localStorage.removeItem('fin_key'); sessionStorage.removeItem('fin_auth');
+  location.reload();
+}
+
+async function doLogin() {
+  const pw = $('login-pw').value;
+  if (!pw) return;
+  if (!settings.passwort) {
+    // erstmalig: setzen
+    await sb.from('fin_einstellungen').update({ passwort: pw }).eq('id',1);
+    settings.passwort = pw;
+    sessionStorage.setItem('fin_auth','1');
+    enterApp();
+    return;
+  }
+  if (pw === settings.passwort) {
+    sessionStorage.setItem('fin_auth','1');
+    $('login-error').style.display='none';
+    enterApp();
+  } else {
+    $('login-error').style.display='block';
+    $('login-pw').value='';
+  }
+}
+function logout() {
+  if (!confirm('Abmelden?')) return;
+  sessionStorage.removeItem('fin_auth');
+  location.reload();
+}
+
+async function enterApp() {
+  showScreen('app');
+  await reloadAll();
+  applySettingsToForm();
+  checkMonthlyReview();
+}
+
+/* ============================================================
+   Daten laden
+   ============================================================ */
+async function reloadAll() {
+  const [k, w, d] = await Promise.all([
+    sb.from('fin_konten').select('*').order('created_at'),
+    sb.from('fin_wertpapiere').select('*').order('created_at'),
+    sb.from('fin_dividenden').select('*').order('jahr'),
+  ]);
+  konten = k.data || [];
+  wertpapiere = w.data || [];
+  dividenden = d.data || [];
+  renderDashboard(); renderKonten(); renderWp(); renderDividenden(); renderSteuer();
+}
+
+/* ============================================================
+   Navigation
+   ============================================================ */
+function showView(v) {
+  document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
+  $('view-'+v).classList.add('active');
+  document.querySelectorAll('.nav-link').forEach(el=>el.classList.toggle('active', el.dataset.view===v));
+  closeSidebar();
+  window.scrollTo(0,0);
+}
+function openSidebar(){ $('sidebar').classList.add('open'); $('overlay').classList.add('visible'); }
+function closeSidebar(){ $('sidebar').classList.remove('open'); $('overlay').classList.remove('visible'); }
+
+/* ============================================================
+   Dashboard
+   ============================================================ */
+function renderDashboard() {
+  const kontenSumme = konten.reduce((s,k)=> s + (Number(k.bestand)||0), 0);
+  const wpSumme = wertpapiere.reduce((s,w)=> s + wpWert(w), 0);
+  const gesamt = kontenSumme + wpSumme;
+  const st = berechneSteuer();
+  const netto = st.zinsertrag + st.divBrutto - st.gesamt;
+  $('dash-stats').innerHTML = `
+    <div class="stat accent"><div class="label">💰 Gesamtvermögen</div><div class="value">${eur(gesamt)}</div><div class="sub">${konten.length} Konten · ${wertpapiere.length} Wertpapiere</div></div>
+    <div class="stat"><div class="label">🏦 Konten</div><div class="value">${eur(kontenSumme)}</div><div class="sub">Zinsen p.a.: ${eur(st.zinsertrag)}</div></div>
+    <div class="stat"><div class="label">📈 Wertpapiere</div><div class="value">${eur(wpSumme)}</div><div class="sub">Dividende p.a. (Prognose): ${eur(st.divBrutto)}</div></div>
+    <div class="stat"><div class="label">🧾 Steuer p.a. (Schätzung)</div><div class="value">${eur(st.gesamt)}</div><div class="sub">Netto-Ertrag: ${eur(netto)}</div></div>`;
+
+  const rows = [
+    ...konten.map(k=>({ label:k.name+(k.bank&&k.bank!=='— manuell —'?' · '+k.bank:''), wert:Number(k.bestand)||0, typ:'Konto' })),
+    ...wertpapiere.map(w=>({ label:w.name, wert:wpWert(w), typ:w.typ==='etf'?'ETF':'Aktie' })),
+  ].sort((a,b)=>b.wert-a.wert);
+  if (!rows.length) { $('dash-breakdown').innerHTML = emptyState('Noch keine Daten','Lege Konten und Wertpapiere an.'); return; }
+  $('dash-breakdown').innerHTML = rows.map(r=>{
+    const p = gesamt>0 ? (r.wert/gesamt*100) : 0;
+    return `<div style="margin-bottom:11px">
+      <div style="display:flex;justify-content:space-between;font-size:0.88rem;margin-bottom:4px">
+        <span>${esc(r.label)} <span class="badge ${r.typ==='ETF'?'badge-etf':r.typ==='Aktie'?'badge-aktie':''}" style="margin-left:4px">${r.typ}</span></span>
+        <span style="font-weight:600">${eur(r.wert)} · ${p.toFixed(1)}%</span>
+      </div>
+      <div style="height:8px;background:var(--bg);border-radius:99px;overflow:hidden"><div style="height:100%;width:${p}%;background:var(--accent)"></div></div>
+    </div>`;
+  }).join('');
+}
+function emptyState(t,s){ return `<div class="empty"><span class="ico">📭</span><div style="font-weight:600">${t}</div><div style="font-size:0.85rem">${s}</div></div>`; }
+function esc(s){ return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* ============================================================
+   Konten
+   ============================================================ */
+function buildBankSelect() {
+  const sel = $('k-bank');
+  sel.innerHTML = BANKEN.map(b=>`<option value="${esc(b.name)}" data-zins="${b.zins}">${esc(b.name)}</option>`).join('');
+}
+function onBankSelect() {
+  const opt = $('k-bank').selectedOptions[0];
+  const z = parseFloat(opt.dataset.zins||'0');
+  if (opt.value !== '— manuell —' && z>0) {
+    $('k-zins').value = z;
+    $('k-zins-hint').textContent = 'Vorgeschlagener Zins — anpassbar.';
+  } else { $('k-zins-hint').textContent=''; }
+}
+function renderKonten() {
+  const tb = $('konten-body');
+  if (!konten.length) { tb.innerHTML = `<tr><td colspan="6">${emptyState('Keine Konten','Füge dein erstes Konto hinzu.')}</td></tr>`; return; }
+  tb.innerHTML = konten.map(k=>{
+    const ertrag = (Number(k.bestand)||0)*(Number(k.zinssatz)||0)/100;
+    return `<tr>
+      <td><strong>${esc(k.name)}</strong>${k.notiz?`<div class="hint">${esc(k.notiz)}</div>`:''}</td>
+      <td>${esc(k.bank||'')}</td>
+      <td class="num">${eur(k.bestand)}</td>
+      <td class="num">${pct(k.zinssatz)}</td>
+      <td class="num">${eur(ertrag)}</td>
+      <td><div class="row-actions">
+        <button class="btn btn-ghost btn-sm" onclick="openKontoModal('${k.id}')">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteKonto('${k.id}')">🗑️</button>
+      </div></td></tr>`;
+  }).join('');
+}
+function openKontoModal(id) {
+  editKontoId = id || null;
+  $('konto-modal-title').textContent = id ? 'Konto bearbeiten' : 'Konto hinzufügen';
+  $('k-error').style.display='none'; $('k-zins-hint').textContent='';
+  if (id) {
+    const k = konten.find(x=>x.id===id);
+    $('k-name').value=k.name||''; $('k-bestand').value=k.bestand??''; $('k-zins').value=k.zinssatz??'';
+    $('k-notiz').value=k.notiz||''; $('k-bank').value = BANKEN.some(b=>b.name===k.bank)?k.bank:'— manuell —';
+  } else {
+    $('k-name').value=''; $('k-bestand').value=''; $('k-zins').value=''; $('k-notiz').value=''; $('k-bank').value='— manuell —';
+  }
+  openModal('konto-modal');
+}
+async function saveKonto() {
+  const name = $('k-name').value.trim();
+  if (!name) { showErr('k-error','Bitte eine Bezeichnung eingeben.'); return; }
+  const payload = { name, bank:$('k-bank').value, bestand:num($('k-bestand').value), zinssatz:num($('k-zins').value), notiz:$('k-notiz').value.trim()||null };
+  if (editKontoId) await sb.from('fin_konten').update(payload).eq('id',editKontoId);
+  else await sb.from('fin_konten').insert(payload);
+  closeModal('konto-modal'); await reloadAll(); toast('Konto gespeichert ✓');
+}
+async function deleteKonto(id) {
+  if (!confirm('Konto wirklich löschen?')) return;
+  await sb.from('fin_konten').delete().eq('id',id);
+  await reloadAll(); toast('Gelöscht');
+}
+
+/* ============================================================
+   Wertpapiere
+   ============================================================ */
+function renderWp() {
+  const tb = $('wp-body');
+  if (!wertpapiere.length) { tb.innerHTML = `<tr><td colspan="7">${emptyState('Keine Wertpapiere','Füge deine erste Aktie oder ETF hinzu.')}</td></tr>`; return; }
+  tb.innerHTML = wertpapiere.map(w=>{
+    const wert = wpWert(w), gv = wert - wpEinstand(w);
+    const kurs = (w.aktueller_kurs!=null && w.aktueller_kurs!=='') ? w.aktueller_kurs : w.kaufkurs;
+    return `<tr>
+      <td><strong>${esc(w.name)}</strong>${w.ticker?`<div class="hint">${esc(w.ticker)}</div>`:''}</td>
+      <td><span class="badge ${w.typ==='etf'?'badge-etf':'badge-aktie'}">${w.typ==='etf'?'ETF':'Aktie'}</span></td>
+      <td class="num">${(Number(w.anzahl)||0).toLocaleString('de-DE',{maximumFractionDigits:4})}</td>
+      <td class="num">${eur(kurs)}</td>
+      <td class="num">${eur(wert)}</td>
+      <td class="num ${gv>=0?'pos':'neg'}">${gv>=0?'+':''}${eur(gv)}</td>
+      <td><div class="row-actions">
+        <button class="btn btn-ghost btn-sm" onclick="openDivModal('${w.id}')" title="Dividenden">💵</button>
+        <button class="btn btn-ghost btn-sm" onclick="openWpModal('${w.id}')">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteWp('${w.id}')">🗑️</button>
+      </div></td></tr>`;
+  }).join('');
+}
+function onTypChange() {
+  const t = $('w-typ').value;
+  if (!$('w-teilfrei').value || $('w-teilfrei').value==='0' || $('w-teilfrei').value==='30') {
+    $('w-teilfrei').value = t==='etf' ? 30 : 0;
+  }
+}
+function openWpModal(id) {
+  editWpId = id || null;
+  $('wp-modal-title').textContent = id ? 'Wertpapier bearbeiten' : 'Wertpapier hinzufügen';
+  $('w-error').style.display='none';
+  if (id) {
+    const w = wertpapiere.find(x=>x.id===id);
+    $('w-name').value=w.name||''; $('w-typ').value=w.typ||'aktie'; $('w-teilfrei').value=w.teilfreistellung??0;
+    $('w-ticker').value=w.ticker||''; $('w-isin').value=w.isin||''; $('w-anzahl').value=w.anzahl??'';
+    $('w-kaufkurs').value=w.kaufkurs??''; $('w-kurs').value=w.aktueller_kurs??''; $('w-notiz').value=w.notiz||'';
+  } else {
+    ['w-name','w-ticker','w-isin','w-anzahl','w-kaufkurs','w-kurs','w-notiz'].forEach(i=>$(i).value='');
+    $('w-typ').value='aktie'; $('w-teilfrei').value=0;
+  }
+  openModal('wp-modal');
+}
+async function saveWp() {
+  const name = $('w-name').value.trim();
+  if (!name) { showErr('w-error','Bitte einen Namen eingeben.'); return; }
+  const payload = {
+    name, typ:$('w-typ').value, teilfreistellung:num($('w-teilfrei').value),
+    ticker:$('w-ticker').value.trim().toUpperCase()||null, isin:$('w-isin').value.trim().toUpperCase()||null,
+    anzahl:num($('w-anzahl').value), kaufkurs:num($('w-kaufkurs').value),
+    aktueller_kurs: $('w-kurs').value!=='' ? num($('w-kurs').value) : null,
+    notiz:$('w-notiz').value.trim()||null,
+  };
+  if (editWpId) await sb.from('fin_wertpapiere').update(payload).eq('id',editWpId);
+  else await sb.from('fin_wertpapiere').insert(payload);
+  closeModal('wp-modal'); await reloadAll(); toast('Wertpapier gespeichert ✓');
+}
+async function deleteWp(id) {
+  if (!confirm('Wertpapier inkl. Dividenden-Historie löschen?')) return;
+  await sb.from('fin_wertpapiere').delete().eq('id',id);
+  await reloadAll(); toast('Gelöscht');
+}
+
+/* ============================================================
+   Dividenden
+   ============================================================ */
+function renderDividenden() {
+  const box = $('div-list');
+  if (!wertpapiere.length) { box.innerHTML = `<div class="card">${emptyState('Keine Wertpapiere','Lege zuerst Aktien/ETFs an.')}</div>`; return; }
+  box.innerHTML = wertpapiere.map(w=>{
+    const rows = dividenden.filter(d=>d.wertpapier_id===w.id).sort((a,b)=>a.jahr-b.jahr);
+    const prog = prognoseDividende(w.id);
+    const hist = rows.length ? rows.map(r=>`<span style="display:inline-block;margin:2px 8px 2px 0"><span style="color:var(--muted)">${r.jahr}:</span> ${eur(r.betrag)}</span>`).join('') : '<span style="color:var(--muted)">noch keine Daten erfasst</span>';
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        <div><h3>${esc(w.name)} <span class="badge ${w.typ==='etf'?'badge-etf':'badge-aktie'}">${w.typ==='etf'?'ETF':'Aktie'}</span></h3>
+          <div style="margin-top:8px;font-size:0.88rem">${hist}</div></div>
+        <div style="text-align:right;min-width:160px">
+          <div class="hint">Ø Prognose / Jahr</div>
+          <div style="font-size:1.25rem;font-weight:700;color:var(--primary)">${eur(prog)}</div>
+          <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="openDivModal('${w.id}')">✏️ Bearbeiten</button>
+        </div>
+      </div></div>`;
+  }).join('');
+}
+function openDivModal(wpId) {
+  divWpId = wpId;
+  const w = wertpapiere.find(x=>x.id===wpId);
+  $('div-modal-title').textContent = 'Dividenden — ' + w.name;
+  $('div-error').style.display='none';
+  $('div-fetch-btn').style.display = w.ticker ? 'inline-flex' : 'none';
+  const rows = dividenden.filter(d=>d.wertpapier_id===wpId).sort((a,b)=>a.jahr-b.jahr);
+  $('div-rows').innerHTML = '';
+  if (rows.length) rows.forEach(r=>addDivRow(r.jahr, r.betrag));
+  else addDivRow(new Date().getFullYear()-1, '');
+  openModal('div-modal');
+}
+function addDivRow(jahr, betrag) {
+  const div = document.createElement('div');
+  div.className = 'div-year-row';
+  div.innerHTML = `<input type="number" class="div-jahr" placeholder="Jahr" value="${jahr??''}" style="max-width:110px">
+    <input type="number" step="0.01" class="div-betrag" placeholder="Betrag (€)" value="${betrag??''}">
+    <button class="btn btn-ghost btn-sm" onclick="this.parentElement.remove()">×</button>`;
+  $('div-rows').appendChild(div);
+}
+async function saveDividends() {
+  const rows = [...document.querySelectorAll('#div-rows .div-year-row')].map(r=>({
+    jahr: parseInt(r.querySelector('.div-jahr').value), betrag: num(r.querySelector('.div-betrag').value)
+  })).filter(r=> r.jahr && r.jahr>1990 && r.jahr<2100);
+  // alte löschen, neue schreiben
+  await sb.from('fin_dividenden').delete().eq('wertpapier_id', divWpId);
+  if (rows.length) await sb.from('fin_dividenden').insert(rows.map(r=>({ wertpapier_id:divWpId, jahr:r.jahr, betrag:r.betrag })));
+  closeModal('div-modal'); await reloadAll(); toast('Dividenden gespeichert ✓');
+}
+
+/* ============================================================
+   Steuer-Ansicht
+   ============================================================ */
+function renderSteuer() {
+  const s = berechneSteuer();
+  const kistLine = settings.kirchensteuer ? `<div class="tax-line"><span>Kirchensteuer (${(Number(settings.kirchensteuersatz)*100).toFixed(0)} %)</span><span>${eur(s.kist)}</span></div>` : '';
+  $('steuer-detail').innerHTML = `
+    <div class="tax-line"><span>Zinserträge (Konten) <span class="muted">p.a.</span></span><span>${eur(s.zinsertrag)}</span></div>
+    <div class="tax-line"><span>Dividenden (Prognose, brutto)</span><span>${eur(s.divBrutto)}</span></div>
+    <div class="tax-line"><span class="muted">abzgl. Teilfreistellung → steuerpfl. Dividende</span><span class="muted">${eur(s.divSteuerpflichtig)}</span></div>
+    <div class="tax-line"><span><strong>Steuerpflichtige Kapitalerträge</strong></span><span><strong>${eur(s.kapitalertraege)}</strong></span></div>
+    <div class="tax-line"><span>abzgl. Sparerpauschbetrag (${settings.familienstand==='verheiratet'?'verheiratet':'ledig'})</span><span>− ${eur(s.freibetrag)}</span></div>
+    <div class="tax-line"><span><strong>Zu versteuern</strong></span><span><strong>${eur(s.steuerbasis)}</strong></span></div>
+    <div class="tax-line"><span>Abgeltungsteuer (25 %)</span><span>${eur(s.est)}</span></div>
+    <div class="tax-line"><span>Solidaritätszuschlag (5,5 %)</span><span>${eur(s.soli)}</span></div>
+    ${kistLine}
+    <div class="tax-line total"><span>Voraussichtliche Steuer p.a.</span><span>${eur(s.gesamt)}</span></div>`;
+}
+
+/* ============================================================
+   Einstellungen
+   ============================================================ */
+function applySettingsToForm() {
+  $('set-familienstand').value = settings.familienstand || 'ledig';
+  $('set-kirchensteuer').checked = !!settings.kirchensteuer;
+  $('set-kirchensteuersatz').value = String(settings.kirchensteuersatz || 0.09);
+  $('set-avkey').value = settings.av_api_key || '';
+  toggleKistGroup();
+}
+function toggleKistGroup(){ $('kist-satz-group').style.display = $('set-kirchensteuer').checked ? 'block':'none'; }
+$('set-kirchensteuer').addEventListener('change', toggleKistGroup);
+async function saveSettings() {
+  const payload = {
+    familienstand: $('set-familienstand').value,
+    kirchensteuer: $('set-kirchensteuer').checked,
+    kirchensteuersatz: Number($('set-kirchensteuersatz').value),
+    av_api_key: $('set-avkey').value.trim() || null,
+  };
+  await sb.from('fin_einstellungen').update(payload).eq('id',1);
+  Object.assign(settings, payload);
+  renderDashboard(); renderSteuer(); toast('Einstellungen gespeichert ✓');
+}
+
+/* ============================================================
+   Monatsabfrage
+   ============================================================ */
+function checkMonthlyReview() {
+  const cur = new Date().toISOString().slice(0,7); // YYYY-MM
+  if (settings.last_review_month !== cur && (konten.length || wertpapiere.length)) {
+    $('review-month').textContent = new Date().toLocaleDateString('de-DE',{month:'long',year:'numeric'});
+    openModal('review-modal');
+  }
+}
+async function dismissReview() {
+  const cur = new Date().toISOString().slice(0,7);
+  settings.last_review_month = cur;
+  await sb.from('fin_einstellungen').update({ last_review_month: cur }).eq('id',1);
+  closeModal('review-modal');
+}
+
+/* ============================================================
+   Alpha Vantage — Kurse & Dividenden
+   ============================================================ */
+function avKey(){ return settings.av_api_key; }
+async function avFetch(params) {
+  const url = 'https://www.alphavantage.co/query?' + new URLSearchParams({ ...params, apikey: avKey() });
+  const res = await fetch(url);
+  const json = await res.json();
+  if (json.Note || json.Information) throw new Error('API-Limit erreicht oder ungültiger Schlüssel. Bitte später erneut versuchen.');
+  return json;
+}
+async function fetchAllPrices() {
+  if (!avKey()) { toast('Bitte erst API-Schlüssel in Einstellungen hinterlegen'); showView('einstellungen'); return; }
+  const withTicker = wertpapiere.filter(w=>w.ticker);
+  if (!withTicker.length) { toast('Keine Ticker-Symbole hinterlegt'); return; }
+  const btn = $('btn-fetch-prices'); btn.disabled=true; btn.textContent='⏳ Lädt…';
+  let ok=0, fail=0;
+  for (const w of withTicker) {
+    try {
+      const j = await avFetch({ function:'GLOBAL_QUOTE', symbol:w.ticker });
+      const price = parseFloat(j['Global Quote']?.['05. price']);
+      if (isFinite(price) && price>0) { await sb.from('fin_wertpapiere').update({ aktueller_kurs: price }).eq('id', w.id); ok++; }
+      else fail++;
+    } catch(e) { fail++; toast(e.message); break; }
+  }
+  btn.disabled=false; btn.textContent='🔄 Kurse abrufen';
+  await reloadAll();
+  toast(`Kurse aktualisiert: ${ok} ✓${fail?`, ${fail} ohne Ergebnis`:''}`);
+}
+async function fetchDividends() {
+  if (!avKey()) { toast('Bitte erst API-Schlüssel in Einstellungen hinterlegen'); return; }
+  const w = wertpapiere.find(x=>x.id===divWpId);
+  if (!w?.ticker) { toast('Kein Ticker-Symbol hinterlegt'); return; }
+  const btn = $('div-fetch-btn'); btn.disabled=true; btn.textContent='⏳ Lädt…';
+  try {
+    const j = await avFetch({ function:'DIVIDENDS', symbol:w.ticker });
+    const data = j.data || [];
+    if (!data.length) { toast('Keine Dividenden-Daten gefunden'); return; }
+    // pro Jahr: Summe der Ausschüttungen je Anteil × Anzahl
+    const perYear = {};
+    data.forEach(d=>{
+      const dateStr = d.payment_date && d.payment_date!=='None' ? d.payment_date : d.ex_dividend_date;
+      const y = parseInt(String(dateStr).slice(0,4));
+      const amt = parseFloat(d.amount);
+      if (y>1990 && isFinite(amt)) perYear[y] = (perYear[y]||0) + amt;
+    });
+    const anzahl = Number(w.anzahl)||0;
+    $('div-rows').innerHTML='';
+    Object.keys(perYear).map(Number).sort((a,b)=>a-b).forEach(y=>{
+      addDivRow(y, +(perYear[y]*anzahl).toFixed(2));
+    });
+    toast(`${Object.keys(perYear).length} Jahre geladen (je Anteil × ${anzahl}). Bitte prüfen & speichern.`);
+  } catch(e) { toast(e.message); }
+  finally { btn.disabled=false; btn.textContent='🔄 Per API automatisch laden'; }
+}
+
+/* ============================================================
+   Modal-Helfer
+   ============================================================ */
+function openModal(id){ $(id).classList.add('open'); }
+function closeModal(id){ $(id).classList.remove('open'); }
+function showErr(id,msg){ const e=$(id); e.style.display='block'; e.textContent=msg; }
+document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',e=>{ if(e.target===m && m.id!=='review-modal') m.classList.remove('open'); }));
+</script>
+</body>
+</html>

@@ -194,6 +194,7 @@
       <button class="nav-link" data-view="konten" onclick="showView('konten')">🏦 Konten</button>
       <button class="nav-link" data-view="einkommen" onclick="showView('einkommen')">💶 Einkommen</button>
       <button class="nav-link" data-view="kredite" onclick="showView('kredite')">💳 Verbindlichkeiten</button>
+      <button class="nav-link" data-view="ausgaben" onclick="showView('ausgaben')">💸 Fixe Ausgaben</button>
       <button class="nav-link" data-view="wertpapiere" onclick="showView('wertpapiere')">📈 Aktien &amp; ETFs</button>
       <button class="nav-link" data-view="dividenden" onclick="showView('dividenden')">💵 Dividenden</button>
       <button class="nav-link" data-view="steuer" onclick="showView('steuer')">🧾 Steuer</button>
@@ -275,6 +276,19 @@
         <thead><tr><th>Name</th><th class="num">Restschuld</th><th class="num">Zins</th><th class="num">Monatsrate</th><th class="num">abbezahlt ca.</th><th></th></tr></thead>
         <tbody id="kredite-body"></tbody>
       </table></div></div>
+    </section>
+
+    <!-- FIXE AUSGABEN -->
+    <section class="view" id="view-ausgaben">
+      <div class="view-head"><h1>💸 Fixe Ausgaben</h1>
+        <button class="btn btn-primary" onclick="openAusgabeModal()">＋ Ausgabe hinzufügen</button>
+      </div>
+      <div class="info-box">📅 Trag wiederkehrende Ausgaben ein und optional, bis wann sie laufen (z.B. Krippenbeiträge bis 01.09.2026). Beendete Ausgaben zählen automatisch nicht mehr mit.</div>
+      <div class="card"><div class="table-wrap"><table>
+        <thead><tr><th>Name</th><th class="num">Betrag</th><th>Rhythmus</th><th class="num">€/Monat</th><th>läuft bis</th><th></th></tr></thead>
+        <tbody id="ausgaben-body"></tbody>
+      </table></div></div>
+      <div class="stat" style="margin-top:4px"><div class="label">💸 Fixe Ausgaben gesamt / Monat (aktuell aktiv)</div><div class="value" id="ausgaben-summe">—</div></div>
     </section>
 
     <!-- WERTPAPIERE -->
@@ -379,6 +393,32 @@ Santander Bank | 100147.21 | 3.3"></textarea>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('import-modal')">Abbrechen</button>
       <button class="btn btn-primary" onclick="doImport()">Importieren</button>
+    </div>
+  </div>
+</div>
+
+<!-- Fixe Ausgabe -->
+<div class="modal-overlay" id="ausgabe-modal">
+  <div class="modal">
+    <div class="modal-head"><h2 id="ausgabe-modal-title">Ausgabe hinzufügen</h2><button class="modal-close" onclick="closeModal('ausgabe-modal')">×</button></div>
+    <div class="form-group"><label>Bezeichnung *</label><input id="ag-name" placeholder="z.B. Krippenbeiträge, Versicherung, Strom"></div>
+    <div class="row">
+      <div class="form-group"><label>Betrag (€) *</label><input id="ag-betrag" type="number" step="0.01"></div>
+      <div class="form-group"><label>Rhythmus</label><select id="ag-rhythmus">
+        <option value="monatlich">monatlich</option>
+        <option value="viertel">vierteljährlich</option>
+        <option value="jaehrlich">jährlich</option>
+      </select></div>
+    </div>
+    <div class="row">
+      <div class="form-group"><label>Läuft ab (optional)</label><input id="ag-ab" type="date"></div>
+      <div class="form-group"><label>Läuft bis (optional)</label><input id="ag-bis" type="date"><div class="hint">leer = unbefristet</div></div>
+    </div>
+    <div class="form-group"><label>Notiz</label><input id="ag-notiz" placeholder="optional"></div>
+    <div class="form-error" id="ag-error"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('ausgabe-modal')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveAusgabe()">Speichern</button>
     </div>
   </div>
 </div>
@@ -727,7 +767,7 @@ async function reloadAll() {
   konten = k.data || [];
   wertpapiere = w.data || [];
   dividenden = d.data || [];
-  renderDashboard(); renderKonten(); renderWp(); renderDividenden(); renderSteuer(); renderKredite();
+  renderDashboard(); renderKonten(); renderWp(); renderDividenden(); renderSteuer(); renderKredite(); renderAusgaben();
 }
 
 /* ============================================================
@@ -757,6 +797,9 @@ function renderDashboard() {
   const haushaltNetto = haushaltNettoMonat();
   const restschuldSum = krediteList().reduce((s,k)=> s + computeKredit(k).restschuld, 0);
   const realesVermoegen = gesamt - restschuldSum;          // reales Gesamtvermögen = Vermögen − Kredite
+  const fixMonat = fixAusgabenMonat();
+  const kreditMonat = kreditRatenMonat();
+  const ueberschuss = haushaltNetto - fixMonat - kreditMonat;
   $('dash-stats').innerHTML = `
     <div class="stat accent"><div class="label">💰 Gesamtvermögen</div><div class="value">${eur(gesamt)}</div><div class="sub">${konten.length} Konten · ${wertpapiere.length} WP${hausbau>0?' · inkl. Hausbau':''}</div></div>
     ${restschuldSum>0?`<div class="stat accent"><div class="label">⚖️ Reales Gesamtvermögen</div><div class="value">${eur(realesVermoegen)}</div><div class="sub">Vermögen − Kredite (${eur(restschuldSum)})</div></div>`:''}
@@ -765,7 +808,9 @@ function renderDashboard() {
     ${hausbau>0?`<div class="stat"><div class="label">🏗️ Für Hausbau ausgegeben</div><div class="value">${eur(hausbau)}</div><div class="sub">im Gesamtvermögen enthalten</div></div>`:''}
     ${restschuldSum>0?`<div class="stat"><div class="label">💳 Verbindlichkeiten</div><div class="value neg">−${eur(restschuldSum)}</div></div>`:''}
     <div class="stat"><div class="label">🧾 Steuer p.a. (Schätzung)</div><div class="value">${eur(st.gesamt)}</div><div class="sub">Kapitalertrag netto: ${eur(netto)}</div></div>
-    ${haushaltNetto>0?`<div class="stat"><div class="label">💶 Haushaltseinkommen / Monat</div><div class="value">${eur(haushaltNetto)}</div><div class="sub">netto, inkl. Kindergeld${kapMonat>0?` & ${eur(kapMonat)} Kapitalerträge`:''}</div></div>`:''}`;
+    ${haushaltNetto>0?`<div class="stat"><div class="label">💶 Haushaltseinkommen / Monat</div><div class="value">${eur(haushaltNetto)}</div><div class="sub">netto, inkl. Kindergeld${kapMonat>0?` & ${eur(kapMonat)} Kapitalerträge`:''}</div></div>`:''}
+    ${fixMonat>0?`<div class="stat"><div class="label">💸 Fixe Ausgaben / Monat</div><div class="value neg">−${eur(fixMonat)}</div></div>`:''}
+    ${haushaltNetto>0?`<div class="stat"><div class="label">📊 Überschuss / Monat</div><div class="value ${ueberschuss<0?'neg':'pos'}">${eur(ueberschuss)}</div><div class="sub">Einkommen − Fixkosten − Kreditraten</div></div>`:''}`;
 
   const rows = [
     ...konten.map(k=>({ label:k.name+(k.bank&&k.bank!=='— manuell —'?' · '+k.bank:''), wert:Number(k.bestand)||0, typ:'Konto' })),
@@ -1377,6 +1422,80 @@ async function deleteKredit(id) {
   if (!confirm('Kredit wirklich löschen?')) return;
   settings.extra.kredite = (settings.extra.kredite||[]).filter(x=>x.id!==id);
   if (await persistExtra()) { renderKredite(); renderDashboard(); toast('Gelöscht'); }
+}
+
+/* ============================================================
+   Fixe Ausgaben (wiederkehrend, mit optionalem Enddatum)
+   ============================================================ */
+let editAusgabeId = null;
+const RHYTHMUS_MONATE = { monatlich:1, viertel:3, jaehrlich:12 };
+const RHYTHMUS_LABEL  = { monatlich:'monatlich', viertel:'vierteljährlich', jaehrlich:'jährlich' };
+function ausgabenList(){ return (settings.extra && Array.isArray(settings.extra.ausgaben)) ? settings.extra.ausgaben : []; }
+function ausgabeProMonat(a){ return (Number(a.betrag)||0) / (RHYTHMUS_MONATE[a.rhythmus]||1); }
+function ausgabeAktiv(a){
+  const today = new Date(); today.setHours(0,0,0,0);
+  if (a.ab)  { const ab = new Date(a.ab);  if (ab > today) return false; }   // startet erst später
+  if (a.bis) { const bis = new Date(a.bis); if (bis < today) return false; }  // schon beendet
+  return true;
+}
+function fixAusgabenMonat(){ return ausgabenList().filter(ausgabeAktiv).reduce((s,a)=> s + ausgabeProMonat(a), 0); }
+function kreditRatenMonat(){ return krediteList().reduce((s,k)=>{ const c = computeKredit(k); return s + (c.restschuld>0.005 ? c.rate : 0); }, 0); }
+function restMonateBis(bis){
+  if (!bis) return null;
+  const now = new Date(), d = new Date(bis);
+  return (d.getFullYear()-now.getFullYear())*12 + (d.getMonth()-now.getMonth());
+}
+function renderAusgaben(){
+  const list = ausgabenList();
+  const tb = $('ausgaben-body');
+  if (!list.length) { tb.innerHTML = `<tr><td colspan="6">${emptyState('Keine fixen Ausgaben','Füge deine erste wiederkehrende Ausgabe hinzu.')}</td></tr>`; $('ausgaben-summe').textContent = eur(0); return; }
+  const sorted = list.slice().sort((a,b)=> (ausgabeAktiv(b)-ausgabeAktiv(a)) || (ausgabeProMonat(b)-ausgabeProMonat(a)));
+  tb.innerHTML = sorted.map(a=>{
+    const aktiv = ausgabeAktiv(a);
+    let bisTxt = '<span class="hint">unbefristet</span>';
+    if (a.bis) {
+      const d = new Date(a.bis), r = restMonateBis(a.bis);
+      bisTxt = d.toLocaleDateString('de-DE') + (r>=0 ? ` <span class="hint">(noch ${r} Mon.)</span>` : ` <span class="hint" style="color:var(--danger)">beendet</span>`);
+    }
+    return `<tr style="${aktiv?'':'opacity:0.45'}">
+      <td><strong>${esc(a.name)}</strong>${a.notiz?`<div class="hint">${esc(a.notiz)}</div>`:''}</td>
+      <td class="num">${eur(a.betrag)}</td>
+      <td>${RHYTHMUS_LABEL[a.rhythmus]||'monatlich'}</td>
+      <td class="num">${eur(ausgabeProMonat(a))}</td>
+      <td>${bisTxt}</td>
+      <td><div class="row-actions">
+        <button class="btn btn-ghost btn-sm" onclick="openAusgabeModal('${a.id}')">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteAusgabe('${a.id}')">🗑️</button>
+      </div></td></tr>`;
+  }).join('');
+  $('ausgaben-summe').textContent = eur(fixAusgabenMonat());
+}
+function openAusgabeModal(id){
+  editAusgabeId = id || null;
+  $('ausgabe-modal-title').textContent = id ? 'Ausgabe bearbeiten' : 'Ausgabe hinzufügen';
+  $('ag-error').style.display='none';
+  const a = id ? ausgabenList().find(x=>x.id===id) : null;
+  $('ag-name').value = a?.name||''; $('ag-betrag').value = a?.betrag??''; $('ag-rhythmus').value = a?.rhythmus||'monatlich';
+  $('ag-ab').value = a?.ab||''; $('ag-bis').value = a?.bis||''; $('ag-notiz').value = a?.notiz||'';
+  openModal('ausgabe-modal');
+}
+async function saveAusgabe(){
+  const name = $('ag-name').value.trim();
+  if (!name) { showErr('ag-error','Bitte eine Bezeichnung eingeben.'); return; }
+  const a = { id: editAusgabeId || (window.crypto?.randomUUID ? crypto.randomUUID() : 'a'+Date.now()),
+    name, betrag:num($('ag-betrag').value), rhythmus:$('ag-rhythmus').value,
+    ab:$('ag-ab').value||null, bis:$('ag-bis').value||null, notiz:$('ag-notiz').value.trim()||null };
+  settings.extra = settings.extra || {};
+  const list = Array.isArray(settings.extra.ausgaben) ? settings.extra.ausgaben.slice() : [];
+  if (editAusgabeId) { const i = list.findIndex(x=>x.id===editAusgabeId); if (i>=0) list[i]=a; else list.push(a); }
+  else list.push(a);
+  settings.extra.ausgaben = list;
+  if (await persistExtra()) { closeModal('ausgabe-modal'); renderAusgaben(); renderDashboard(); toast('Ausgabe gespeichert ✓'); }
+}
+async function deleteAusgabe(id){
+  if (!confirm('Ausgabe wirklich löschen?')) return;
+  settings.extra.ausgaben = (settings.extra.ausgaben||[]).filter(x=>x.id!==id);
+  if (await persistExtra()) { renderAusgaben(); renderDashboard(); toast('Gelöscht'); }
 }
 
 /* ============================================================

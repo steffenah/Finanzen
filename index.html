@@ -192,6 +192,7 @@
     <nav class="sidebar-nav">
       <button class="nav-link active" data-view="dashboard" onclick="showView('dashboard')">📊 Übersicht</button>
       <button class="nav-link" data-view="konten" onclick="showView('konten')">🏦 Konten</button>
+      <button class="nav-link" data-view="einkommen" onclick="showView('einkommen')">💶 Einkommen</button>
       <button class="nav-link" data-view="wertpapiere" onclick="showView('wertpapiere')">📈 Aktien &amp; ETFs</button>
       <button class="nav-link" data-view="dividenden" onclick="showView('dividenden')">💵 Dividenden</button>
       <button class="nav-link" data-view="steuer" onclick="showView('steuer')">🧾 Steuer</button>
@@ -225,12 +226,42 @@
     <!-- KONTEN -->
     <section class="view" id="view-konten">
       <div class="view-head"><h1>🏦 Konten</h1>
-        <button class="btn btn-primary" onclick="openKontoModal()">＋ Konto hinzufügen</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" onclick="openImportModal()">📥 Importieren</button>
+          <button class="btn btn-primary" onclick="openKontoModal()">＋ Konto hinzufügen</button>
+        </div>
       </div>
       <div class="card"><div class="table-wrap"><table>
         <thead><tr><th>Name</th><th>Bank</th><th class="num">Bestand</th><th class="num">Zins p.a.</th><th class="num">Zinsertrag/Jahr</th><th></th></tr></thead>
         <tbody id="konten-body"></tbody>
       </table></div></div>
+    </section>
+
+    <!-- EINKOMMEN -->
+    <section class="view" id="view-einkommen">
+      <div class="view-head"><h1>💶 Einkommen</h1>
+        <button class="btn btn-primary" onclick="saveEinkommen()">💾 Speichern</button>
+      </div>
+      <div class="warn-box">⚠️ Die Netto-Berechnung ist eine <strong>Schätzung</strong> (deutsche Lohnabrechnung 2025, gesetzlich versichert). Steuerklasse V/VI und private KV sind nur grob genähert. Tipp: Trag bei Bedarf dein echtes Netto aus der Gehaltsabrechnung als „Netto-Korrektur" ein — das überschreibt die Schätzung.</div>
+      <div id="einkommen-persons"></div>
+      <button class="btn btn-ghost btn-sm" onclick="addPerson()" style="margin-bottom:16px">＋ Person hinzufügen</button>
+      <div class="card">
+        <h2 style="margin-bottom:14px">👨‍👩‍👧‍👦 Kinder &amp; Kindergeld</h2>
+        <div class="row">
+          <div class="form-group"><label>Anzahl Kinder</label><input id="ek-kinder" type="number" min="0" step="1" oninput="onKinderChange()"></div>
+          <div class="form-group"><label>Kindergeld gesamt (€/Monat)</label><input id="ek-kindergeld" type="number" step="0.01" oninput="recomputeEinkommen()">
+            <div class="hint">2025: 255 € pro Kind</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2 style="margin-bottom:6px">🏗️ Hausbau</h2>
+        <div class="form-group"><label>Bisher für Hausbau ausgegeben (€)</label><input id="ek-hausbau" type="number" step="0.01"></div>
+      </div>
+      <div class="stat accent" style="margin-top:4px">
+        <div class="label">💶 Haushalts-Nettoeinkommen / Monat</div>
+        <div class="value" id="ek-haushalt-netto">—</div>
+        <div class="sub" id="ek-haushalt-sub"></div>
+      </div>
     </section>
 
     <!-- WERTPAPIERE -->
@@ -320,6 +351,21 @@
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('konto-modal')">Abbrechen</button>
       <button class="btn btn-primary" onclick="saveKonto()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Konten-Import -->
+<div class="modal-overlay" id="import-modal">
+  <div class="modal">
+    <div class="modal-head"><h2>📥 Konten importieren</h2><button class="modal-close" onclick="closeModal('import-modal')">×</button></div>
+    <p class="hint" style="margin-bottom:10px">Eine Zeile pro Konto: <strong>Name | Bestand | Zins%</strong> (Trenner: <code>|</code>, <code>;</code> oder Tab). Zins ist optional.</p>
+    <textarea id="import-text" style="min-height:200px;font-family:monospace;font-size:0.82rem" placeholder="Trade Republic Steffen | 12818.22 | 2.25
+Santander Bank | 100147.21 | 3.3"></textarea>
+    <div class="form-error" id="import-error"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('import-modal')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="doImport()">Importieren</button>
     </div>
   </div>
 </div>
@@ -448,8 +494,10 @@ create table if not exists fin_einstellungen (
   familienstand text default 'ledig',
   kirchensteuer boolean default false,
   kirchensteuersatz numeric default 0.09,
-  av_api_key text, last_review_month text, passwort text
+  av_api_key text, last_review_month text, passwort text,
+  extra jsonb default '{}'::jsonb
 );
+alter table fin_einstellungen add column if not exists extra jsonb default '{}'::jsonb;
 insert into fin_einstellungen (id) values (1) on conflict (id) do nothing;
 alter table fin_konten enable row level security;
 alter table fin_wertpapiere enable row level security;
@@ -544,6 +592,7 @@ async function loadSettingsThenAuth() {
     const { data, error } = await sb.from('fin_einstellungen').select('*').eq('id',1).single();
     if (error) throw error;
     settings = data || {};
+    settings.extra = settings.extra || {};
   } catch(e) {
     showScreen('config');
     $('cfg-error').style.display='block';
@@ -617,6 +666,7 @@ async function enterApp() {
   showScreen('app');
   await reloadAll();
   applySettingsToForm();
+  showEinkommenFromSettings();
   checkMonthlyReview();
 }
 
@@ -657,11 +707,15 @@ function renderDashboard() {
   const gesamt = kontenSumme + wpSumme;
   const st = berechneSteuer();
   const netto = st.zinsertrag + st.divBrutto - st.gesamt;
+  const haushaltNetto = haushaltNettoMonat();
+  const hausbau = Number((settings.extra||{}).hausbauAusgegeben)||0;
   $('dash-stats').innerHTML = `
     <div class="stat accent"><div class="label">💰 Gesamtvermögen</div><div class="value">${eur(gesamt)}</div><div class="sub">${konten.length} Konten · ${wertpapiere.length} Wertpapiere</div></div>
     <div class="stat"><div class="label">🏦 Konten</div><div class="value">${eur(kontenSumme)}</div><div class="sub">Zinsen p.a.: ${eur(st.zinsertrag)}</div></div>
     <div class="stat"><div class="label">📈 Wertpapiere</div><div class="value">${eur(wpSumme)}</div><div class="sub">Dividende p.a. (Prognose): ${eur(st.divBrutto)}</div></div>
-    <div class="stat"><div class="label">🧾 Steuer p.a. (Schätzung)</div><div class="value">${eur(st.gesamt)}</div><div class="sub">Netto-Ertrag: ${eur(netto)}</div></div>`;
+    <div class="stat"><div class="label">🧾 Steuer p.a. (Schätzung)</div><div class="value">${eur(st.gesamt)}</div><div class="sub">Netto-Ertrag: ${eur(netto)}</div></div>
+    ${haushaltNetto>0?`<div class="stat"><div class="label">💶 Haushaltseinkommen / Monat</div><div class="value">${eur(haushaltNetto)}</div><div class="sub">netto inkl. Kindergeld</div></div>`:''}
+    ${hausbau>0?`<div class="stat"><div class="label">🏗️ Für Hausbau ausgegeben</div><div class="value">${eur(hausbau)}</div></div>`:''}`;
 
   const rows = [
     ...konten.map(k=>({ label:k.name+(k.bank&&k.bank!=='— manuell —'?' · '+k.bank:''), wert:Number(k.bestand)||0, typ:'Konto' })),
@@ -971,6 +1025,176 @@ async function fetchDividends() {
     toast(`${Object.keys(perYear).length} Jahre geladen (je Anteil × ${anzahl}). Bitte prüfen & speichern.`);
   } catch(e) { toast(e.message); }
   finally { btn.disabled=false; btn.textContent='🔄 Per API automatisch laden'; }
+}
+
+/* ============================================================
+   Einkommen — Brutto → Netto (deutsche Lohnabrechnung 2025, Schätzung)
+   ============================================================ */
+// Einkommensteuertarif 2025 (§ 32a EStG), Jahreswert
+function estTarif2025(zvE) {
+  const x = Math.max(0, Math.floor(zvE));
+  if (x <= 12096) return 0;
+  if (x <= 17443) { const y=(x-12096)/10000; return (932.30*y + 1400)*y; }
+  if (x <= 68480) { const z=(x-17443)/10000; return (176.64*z + 2397)*z + 1015.13; }
+  if (x <= 277825) return 0.42*x - 10911.92;
+  return 0.45*x - 19246.67;
+}
+
+// Sozialversicherung + Lohnsteuer für eine Person (Monatswerte)
+function computeNetto(p) {
+  const brutto = Number(p.brutto)||0;                 // €/Monat
+  const kinder = Number(p.kinder)||0;
+  const stkl   = Number(p.steuerklasse)||4;
+  const privat = !!p.privat;
+  const zusatz = (p.kvZusatz!=null && p.kvZusatz!=='' ? Number(p.kvZusatz) : 1.7)/100;
+  const BBG_RV = 8050, BBG_KV = 5512.5;               // Beitragsbemessungsgrenzen 2025 (€/Monat)
+  const basisRV = Math.min(brutto, BBG_RV);
+  const basisKV = Math.min(brutto, BBG_KV);
+  const rv = basisRV * 0.093;                         // Rentenvers. AN-Anteil
+  const av = basisRV * 0.013;                         // Arbeitslosenvers. AN-Anteil
+  let kv = 0, pv = 0;
+  if (!privat) {
+    kv = basisKV * (0.073 + zusatz/2);                // Krankenvers. AN-Anteil + halber Zusatz
+    let pvRate = 0.018;                               // Pflegevers. AN-Basis (2025)
+    if (kinder === 0) pvRate += 0.006;                // Kinderlosenzuschlag
+    else if (kinder >= 2) pvRate -= 0.0025 * Math.min(kinder-1, 4); // Abschlag ab 2. Kind
+    pv = basisKV * pvRate;
+  }
+  const sv = rv + av + kv + pv;
+  // Lohnsteuer: zu versteuerndes Einkommen (vereinfacht)
+  const vorsorge = sv * 12;                           // Näherung Vorsorgepauschale
+  let zvE = brutto*12 - 1230 - 36 - vorsorge;         // AN-Pauschbetrag + Sonderausgaben
+  if (stkl === 2) zvE -= 4260;                        // Entlastungsbetrag Alleinerziehende
+  zvE = Math.max(0, zvE);
+  let lstJahr;
+  if (stkl === 3)      lstJahr = 2 * estTarif2025(zvE/2);          // Splitting
+  else if (stkl === 5 || stkl === 6) lstJahr = estTarif2025(zvE + 12096); // grobe Näherung (kein Grundfreibetrag)
+  else                 lstJahr = estTarif2025(zvE);                // I, II, IV
+  lstJahr = Math.max(0, lstJahr);
+  const lst  = lstJahr / 12;
+  const soli = (lstJahr > 19950) ? lst * 0.055 : 0;
+  const kist = settings.kirchensteuer ? lst * Number(settings.kirchensteuersatz||0.09) : 0;
+  const netto = brutto - sv - lst - soli - kist;
+  return { brutto, rv, av, kv, pv, sv, lst, soli, kist, netto };
+}
+
+function nettoEffektiv(p, kinder) {
+  if (p.nettoOverride!=='' && p.nettoOverride!=null) return Number(p.nettoOverride);
+  return computeNetto({ ...p, kinder }).netto;
+}
+function haushaltNettoMonat() {
+  const ex = settings.extra || {};
+  let sum = 0;
+  if (Array.isArray(ex.income)) ex.income.forEach(p => { sum += nettoEffektiv(p, ex.kinderAnzahl||0); });
+  sum += Number(ex.kindergeld)||0;
+  return sum;
+}
+
+let ekPersons = [];
+function leerePerson(){ return { name:'', brutto:'', steuerklasse:4, privat:false, kvZusatz:1.7, nettoOverride:'' }; }
+function showEinkommenFromSettings() {
+  const ex = settings.extra || {};
+  ekPersons = (Array.isArray(ex.income) && ex.income.length) ? ex.income.map(x=>({ ...x })) : [leerePerson()];
+  $('ek-kinder').value     = ex.kinderAnzahl ?? '';
+  $('ek-kindergeld').value = ex.kindergeld ?? '';
+  $('ek-hausbau').value    = ex.hausbauAusgegeben ?? '';
+  renderPersons();
+  recomputeEinkommen();
+}
+function personCard(p, i) {
+  const stklOpts = [1,2,3,4,5,6].map(n=>`<option value="${n}" ${Number(p.steuerklasse||4)===n?'selected':''}>${n}</option>`).join('');
+  return `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h3>${esc(p.name||('Person '+(i+1)))}</h3>
+      <button class="btn btn-danger btn-sm" onclick="removePerson(${i})">🗑️</button>
+    </div>
+    <div class="row">
+      <div class="form-group"><label>Name</label><input class="ek-name" data-i="${i}" value="${esc(p.name||'')}" oninput="recomputeEinkommen()"></div>
+      <div class="form-group"><label>Brutto (€/Monat)</label><input class="ek-brutto" data-i="${i}" type="number" step="0.01" value="${p.brutto??''}" oninput="recomputeEinkommen()"></div>
+    </div>
+    <div class="row">
+      <div class="form-group"><label>Steuerklasse</label><select class="ek-stkl" data-i="${i}" onchange="recomputeEinkommen()">${stklOpts}</select></div>
+      <div class="form-group"><label>Krankenversicherung</label><select class="ek-privat" data-i="${i}" onchange="recomputeEinkommen()">
+        <option value="0" ${!p.privat?'selected':''}>gesetzlich</option><option value="1" ${p.privat?'selected':''}>privat</option></select></div>
+      <div class="form-group"><label>KV-Zusatz (%)</label><input class="ek-zusatz" data-i="${i}" type="number" step="0.1" value="${p.kvZusatz??1.7}" oninput="recomputeEinkommen()"></div>
+    </div>
+    <div class="form-group"><label>Netto-Korrektur (€/Monat, optional — überschreibt die Schätzung)</label><input class="ek-override" data-i="${i}" type="number" step="0.01" value="${p.nettoOverride??''}" oninput="recomputeEinkommen()"></div>
+    <div id="ek-res-${i}" class="info-box" style="margin-bottom:0;background:#fffbeb;border-color:#fde68a;color:#92400e"></div>
+  </div>`;
+}
+function renderPersons() { $('einkommen-persons').innerHTML = ekPersons.map((p,i)=>personCard(p,i)).join(''); }
+function readPersonsFromDOM() {
+  ekPersons = [...document.querySelectorAll('#einkommen-persons .ek-name')].map(el=>{
+    const i = el.dataset.i;
+    const g = (cls)=>document.querySelector(`#einkommen-persons .${cls}[data-i="${i}"]`);
+    const ov = g('ek-override').value;
+    return { name:g('ek-name').value.trim(), brutto:num(g('ek-brutto').value), steuerklasse:Number(g('ek-stkl').value),
+             privat:g('ek-privat').value==='1', kvZusatz:num(g('ek-zusatz').value), nettoOverride: ov!==''?num(ov):'' };
+  });
+}
+function recomputeEinkommen() {
+  readPersonsFromDOM();
+  const kinder = parseInt($('ek-kinder').value)||0;
+  let haus = 0;
+  ekPersons.forEach((p,i)=>{
+    const r = computeNetto({ ...p, kinder });
+    const eff = (p.nettoOverride!==''&&p.nettoOverride!=null) ? Number(p.nettoOverride) : r.netto;
+    haus += eff;
+    const box = $('ek-res-'+i);
+    if (box) box.innerHTML = nettoBreakdownHtml(r, p.nettoOverride);
+  });
+  const kg = num($('ek-kindergeld').value);
+  $('ek-haushalt-netto').textContent = eur(haus + kg);
+  $('ek-haushalt-sub').textContent = `${ekPersons.length} Einkommen + ${eur(kg)} Kindergeld`;
+}
+function nettoBreakdownHtml(r, override) {
+  const ov = (override!==''&&override!=null);
+  return `<div style="display:flex;justify-content:space-between"><span>Brutto</span><span>${eur(r.brutto)}</span></div>
+    <div style="display:flex;justify-content:space-between"><span>− Sozialvers. (RV/AV/KV/PV)</span><span>${eur(r.sv)}</span></div>
+    <div style="display:flex;justify-content:space-between"><span>− Lohnsteuer${r.soli?' + Soli':''}${r.kist?' + KiSt':''}</span><span>${eur(r.lst+r.soli+r.kist)}</span></div>
+    <div style="display:flex;justify-content:space-between;font-weight:700;border-top:1px solid #fde68a;margin-top:4px;padding-top:4px"><span>= Netto (Schätzung)</span><span>${eur(r.netto)}</span></div>
+    ${ov?`<div style="display:flex;justify-content:space-between;font-weight:700;color:#065f46;margin-top:2px"><span>✏️ Netto (deine Korrektur)</span><span>${eur(Number(override))}</span></div>`:''}`;
+}
+function addPerson() { readPersonsFromDOM(); ekPersons.push(leerePerson()); renderPersons(); recomputeEinkommen(); }
+function removePerson(i) { readPersonsFromDOM(); ekPersons.splice(i,1); if(!ekPersons.length) ekPersons.push(leerePerson()); renderPersons(); recomputeEinkommen(); }
+function onKinderChange() {
+  const k = parseInt($('ek-kinder').value)||0;
+  const cur = $('ek-kindergeld').value;
+  if (cur==='' || Number(cur)%255===0) $('ek-kindergeld').value = k*255;  // Vorschlag, überschreibbar
+  recomputeEinkommen();
+}
+async function saveEinkommen() {
+  readPersonsFromDOM();
+  const extra = Object.assign({}, settings.extra||{}, {
+    income: ekPersons,
+    kinderAnzahl: parseInt($('ek-kinder').value)||0,
+    kindergeld: num($('ek-kindergeld').value),
+    hausbauAusgegeben: num($('ek-hausbau').value),
+  });
+  const { error } = await sb.from('fin_einstellungen').update({ extra }).eq('id',1);
+  if (error) { toast('Fehler — ist die Spalte „extra" in Supabase angelegt? Siehe Hinweis.'); return; }
+  settings.extra = extra;
+  renderDashboard();
+  toast('Einkommen gespeichert ✓');
+}
+
+/* ============================================================
+   Konten-Import (Copy-Paste)
+   ============================================================ */
+function openImportModal() { $('import-text').value=''; $('import-error').style.display='none'; openModal('import-modal'); }
+async function doImport() {
+  const lines = $('import-text').value.split('\n').map(l=>l.trim()).filter(Boolean);
+  const rows = [];
+  for (const line of lines) {
+    const parts = line.split(/[|;\t]/).map(s=>s.trim());
+    if (!parts[0]) continue;
+    rows.push({ name:parts[0], bestand: parts[1]!=null&&parts[1]!=='' ? num(parts[1]) : 0,
+                zinssatz: parts[2]!=null&&parts[2]!=='' ? num(parts[2]) : 0, bank:'— manuell —' });
+  }
+  if (!rows.length) { showErr('import-error','Keine gültigen Zeilen erkannt.'); return; }
+  const { error } = await sb.from('fin_konten').insert(rows);
+  if (error) { showErr('import-error','Fehler beim Import: '+error.message); return; }
+  closeModal('import-modal'); await reloadAll(); toast(rows.length+' Konten importiert ✓');
 }
 
 /* ============================================================

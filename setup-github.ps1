@@ -6,7 +6,7 @@
 Set-Location $PSScriptRoot
 
 # >>> HIER deine Repo-URL eintragen (von github.com kopiert): <<<
-$RepoUrl = "https://github.com/ahlershausbau-del/Finanzen.git"
+$RepoUrl = "https://github.com/steffenah/Finanzen.git"
 
 if ($RepoUrl -like "*DEIN-*" -or [string]::IsNullOrWhiteSpace($RepoUrl)) {
     Write-Host "Bitte zuerst die Variable \$RepoUrl oben im Skript anpassen." -ForegroundColor Red

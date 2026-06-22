@@ -1,0 +1,69 @@
+==========================================================
+  FINANZEN & VERMÖGEN  –  Anleitung
+==========================================================
+
+WAS KANN DIE APP?
+- Konten & Bankbestände eintragen (mit Zins-Vorschlag je Bank)
+- Aktien & ETFs eintragen, Kurse automatisch abrufen
+- Dividenden erfassen → Prognose aus 10-Jahres-Durchschnitt
+- Deutsche Steuer (Abgeltungsteuer + Soli + Kirchensteuer) schätzen
+- Bei jedem Monatswechsel: Erinnerung, Werte zu prüfen
+- Synchronisiert zwischen Laptop und PC (über Supabase + GitHub)
+
+
+==========================================================
+  EINRICHTUNG – einmalig
+==========================================================
+
+SCHRITT 1 – Datenbank (Supabase, kostenlos)
+-------------------------------------------
+1. Auf supabase.com registrieren → "New Project".
+2. Im Projekt links: "SQL Editor" → den Code aus der App
+   (Einrichtungsbildschirm, Knopf "SQL kopieren") einfügen → "Run".
+3. Links "Project Settings" → "API":
+   - "Project URL" und "anon public key" kopieren.
+4. App (index.html) öffnen → URL und Key eintragen → "Verbinden".
+5. Beim ersten Anmelden ein Passwort festlegen (merken!).
+
+SCHRITT 2 – Kurs-/Dividenden-Abruf (optional, kostenlos)
+--------------------------------------------------------
+1. Auf alphavantage.co/support/#api-key einen gratis API-Key holen.
+2. In der App unter "Einstellungen" eintragen → speichern.
+   (Hinweis: ~25 Abrufe/Tag gratis – für monatliche Prüfung genug.)
+   Tipp Ticker-Symbole: US-Börse z.B. AAPL, Xetra z.B. SAP.DE
+
+SCHRITT 3 – Geräte-Sync über GitHub (optional, empfohlen)
+---------------------------------------------------------
+HINWEIS: Deine FINANZDATEN liegen in Supabase, NICHT auf GitHub.
+GitHub speichert nur den Programmcode, damit beide Geräte die
+gleiche App-Version haben.
+
+A) Auf github.com ein LEERES Repo anlegen (Name z.B. "Finanzen",
+   ohne README/Lizenz).
+B) Die Repo-URL oben in "setup-github.ps1" eintragen.
+C) Rechtsklick auf "setup-github.ps1" → "Mit PowerShell ausführen".
+
+Auf dem ZWEITEN Gerät (PC zuhause):
+   git clone <deine-Repo-URL> "Finanzen"
+Danach dort dieselbe Supabase-URL + Key in der App eintragen –
+deine Daten sind sofort da.
+
+
+==========================================================
+  TÄGLICHE NUTZUNG
+==========================================================
+- App: index.html im Browser öffnen (oder als App installieren:
+  im Browser-Menü "Zu Startbildschirm/Apps hinzufügen").
+- Code aktuell halten: "start.ps1" doppelklicken
+  (holt Updates beim Start, lädt Änderungen automatisch hoch).
+- Immer nur auf EINEM Gerät gleichzeitig arbeiten und start.ps1
+  durchlaufen lassen, bis "Fertig" erscheint.
+
+
+==========================================================
+  WICHTIGER HINWEIS
+==========================================================
+Die Steuerberechnung ist eine unverbindliche Schätzung
+(keine Steuerberatung). Die Vorabpauschale auf thesaurierende
+Fonds ist nicht enthalten. Bank-Zinssätze sind Vorschläge und
+sollten bei Bedarf angepasst werden.

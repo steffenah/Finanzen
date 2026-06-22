@@ -1172,7 +1172,14 @@ async function saveEinkommen() {
     hausbauAusgegeben: num($('ek-hausbau').value),
   });
   const { error } = await sb.from('fin_einstellungen').update({ extra }).eq('id',1);
-  if (error) { toast('Fehler — ist die Spalte „extra" in Supabase angelegt? Siehe Hinweis.'); return; }
+  if (error) {
+    console.error('saveEinkommen', error);
+    alert('Speichern fehlgeschlagen ❌\n\nGrund: ' + (error.message||error) +
+      '\n\nMeist fehlt die Datenbank-Spalte „extra". Bitte in Supabase unter\nSQL Editor → New query genau diese Zeile einfügen und auf RUN klicken:\n\n' +
+      "alter table fin_einstellungen add column if not exists extra jsonb default '{}'::jsonb;" +
+      '\n\nDanach hier nochmal auf „Speichern".');
+    return;
+  }
   settings.extra = extra;
   renderDashboard();
   toast('Einkommen gespeichert ✓');

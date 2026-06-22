@@ -193,6 +193,7 @@
       <button class="nav-link active" data-view="dashboard" onclick="showView('dashboard')">📊 Übersicht</button>
       <button class="nav-link" data-view="konten" onclick="showView('konten')">🏦 Konten</button>
       <button class="nav-link" data-view="einkommen" onclick="showView('einkommen')">💶 Einkommen</button>
+      <button class="nav-link" data-view="kredite" onclick="showView('kredite')">💳 Verbindlichkeiten</button>
       <button class="nav-link" data-view="wertpapiere" onclick="showView('wertpapiere')">📈 Aktien &amp; ETFs</button>
       <button class="nav-link" data-view="dividenden" onclick="showView('dividenden')">💵 Dividenden</button>
       <button class="nav-link" data-view="steuer" onclick="showView('steuer')">🧾 Steuer</button>
@@ -262,6 +263,18 @@
         <div class="value" id="ek-haushalt-netto">—</div>
         <div class="sub" id="ek-haushalt-sub"></div>
       </div>
+    </section>
+
+    <!-- VERBINDLICHKEITEN -->
+    <section class="view" id="view-kredite">
+      <div class="view-head"><h1>💳 Verbindlichkeiten</h1>
+        <button class="btn btn-primary" onclick="openKreditModal()">＋ Kredit hinzufügen</button>
+      </div>
+      <div class="info-box">📉 Aus <strong>Betrag, Zinssatz und Tilgung</strong> berechnet die App automatisch die monatliche Rate, die aktuelle Restschuld (ab Startdatum) und wann der Kredit voraussichtlich abbezahlt ist.</div>
+      <div class="card"><div class="table-wrap"><table>
+        <thead><tr><th>Name</th><th class="num">Restschuld</th><th class="num">Zins</th><th class="num">Monatsrate</th><th class="num">abbezahlt ca.</th><th></th></tr></thead>
+        <tbody id="kredite-body"></tbody>
+      </table></div></div>
     </section>
 
     <!-- WERTPAPIERE -->
@@ -366,6 +379,38 @@ Santander Bank | 100147.21 | 3.3"></textarea>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('import-modal')">Abbrechen</button>
       <button class="btn btn-primary" onclick="doImport()">Importieren</button>
+    </div>
+  </div>
+</div>
+
+<!-- Kredit -->
+<div class="modal-overlay" id="kredit-modal">
+  <div class="modal">
+    <div class="modal-head"><h2 id="kredit-modal-title">Kredit hinzufügen</h2><button class="modal-close" onclick="closeModal('kredit-modal')">×</button></div>
+    <div class="form-group"><label>Bezeichnung *</label><input id="kr-name" placeholder="z.B. Baukredit, KFW, Autokredit"></div>
+    <div class="row">
+      <div class="form-group"><label>Kreditbetrag (€) *</label><input id="kr-betrag" type="number" step="0.01" oninput="updateKreditVorschau()"></div>
+      <div class="form-group"><label>Sollzins (% p.a.)</label><input id="kr-zins" type="number" step="0.01" oninput="updateKreditVorschau()"></div>
+    </div>
+    <div class="form-group"><label>Start der Laufzeit</label><input id="kr-start" type="month" oninput="updateKreditVorschau()"></div>
+    <div class="row">
+      <div class="form-group"><label>Tilgung über…</label>
+        <select id="kr-art" onchange="onKreditArtChange()">
+          <option value="tilgung">Anfängliche Tilgung (%)</option>
+          <option value="laufzeit">Laufzeit (Jahre)</option>
+          <option value="rate">Feste Monatsrate (€)</option>
+        </select>
+      </div>
+      <div class="form-group"><label id="kr-wert-label">Anfängliche Tilgung (%)</label><input id="kr-wert" type="number" step="0.01" oninput="updateKreditVorschau()">
+        <div class="hint" id="kr-wert-hint">Üblich bei Baukrediten: 2–3 %.</div>
+      </div>
+    </div>
+    <div class="info-box" id="kr-vorschau" style="display:none"></div>
+    <div class="form-group"><label>Notiz</label><input id="kr-notiz" placeholder="optional"></div>
+    <div class="form-error" id="kr-error"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('kredit-modal')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveKredit()">Speichern</button>
     </div>
   </div>
 </div>
@@ -682,7 +727,7 @@ async function reloadAll() {
   konten = k.data || [];
   wertpapiere = w.data || [];
   dividenden = d.data || [];
-  renderDashboard(); renderKonten(); renderWp(); renderDividenden(); renderSteuer();
+  renderDashboard(); renderKonten(); renderWp(); renderDividenden(); renderSteuer(); renderKredite();
 }
 
 /* ============================================================
@@ -709,13 +754,17 @@ function renderDashboard() {
   const netto = st.zinsertrag + st.divBrutto - st.gesamt;
   const haushaltNetto = haushaltNettoMonat();
   const hausbau = Number((settings.extra||{}).hausbauAusgegeben)||0;
+  const restschuldSum = krediteList().reduce((s,k)=> s + computeKredit(k).restschuld, 0);
+  const nettovermoegen = gesamt - restschuldSum;
   $('dash-stats').innerHTML = `
     <div class="stat accent"><div class="label">💰 Gesamtvermögen</div><div class="value">${eur(gesamt)}</div><div class="sub">${konten.length} Konten · ${wertpapiere.length} Wertpapiere</div></div>
     <div class="stat"><div class="label">🏦 Konten</div><div class="value">${eur(kontenSumme)}</div><div class="sub">Zinsen p.a.: ${eur(st.zinsertrag)}</div></div>
     <div class="stat"><div class="label">📈 Wertpapiere</div><div class="value">${eur(wpSumme)}</div><div class="sub">Dividende p.a. (Prognose): ${eur(st.divBrutto)}</div></div>
     <div class="stat"><div class="label">🧾 Steuer p.a. (Schätzung)</div><div class="value">${eur(st.gesamt)}</div><div class="sub">Netto-Ertrag: ${eur(netto)}</div></div>
     ${haushaltNetto>0?`<div class="stat"><div class="label">💶 Haushaltseinkommen / Monat</div><div class="value">${eur(haushaltNetto)}</div><div class="sub">netto inkl. Kindergeld</div></div>`:''}
-    ${hausbau>0?`<div class="stat"><div class="label">🏗️ Für Hausbau ausgegeben</div><div class="value">${eur(hausbau)}</div></div>`:''}`;
+    ${hausbau>0?`<div class="stat"><div class="label">🏗️ Für Hausbau ausgegeben</div><div class="value">${eur(hausbau)}</div></div>`:''}
+    ${restschuldSum>0?`<div class="stat"><div class="label">💳 Verbindlichkeiten</div><div class="value neg">−${eur(restschuldSum)}</div></div>`:''}
+    ${restschuldSum>0?`<div class="stat"><div class="label">⚖️ Nettovermögen</div><div class="value">${eur(nettovermoegen)}</div><div class="sub">Vermögen − Schulden</div></div>`:''}`;
 
   const rows = [
     ...konten.map(k=>({ label:k.name+(k.bank&&k.bank!=='— manuell —'?' · '+k.bank:''), wert:Number(k.bestand)||0, typ:'Konto' })),
@@ -1183,6 +1232,142 @@ async function saveEinkommen() {
   settings.extra = extra;
   renderDashboard();
   toast('Einkommen gespeichert ✓');
+}
+
+/* ============================================================
+   Verbindlichkeiten / Kredite — Annuität & Tilgungsplan
+   ============================================================ */
+let editKreditId = null;
+function krediteList(){ return (settings.extra && Array.isArray(settings.extra.kredite)) ? settings.extra.kredite : []; }
+
+// Speichert settings.extra zentral in Supabase
+async function persistExtra() {
+  const { error } = await sb.from('fin_einstellungen').update({ extra: settings.extra }).eq('id',1);
+  if (error) {
+    console.error('persistExtra', error);
+    alert('Speichern fehlgeschlagen ❌\n\nGrund: ' + (error.message||error) +
+      '\n\nMeist fehlt die Datenbank-Spalte „extra". In Supabase → SQL Editor diese Zeile ausführen:\n\n' +
+      "alter table fin_einstellungen add column if not exists extra jsonb default '{}'::jsonb;");
+    return false;
+  }
+  return true;
+}
+
+// Berechnet Rate, Restschuld heute und Abzahl-Datum
+function computeKredit(k) {
+  const P = Number(k.betrag)||0;
+  const zinsJ = Number(k.zinssatz)||0;
+  const r = zinsJ/100/12;                 // monatlicher Zinssatz
+  const art = k.tilgungsart || 'tilgung';
+  const w = Number(k.tilgungswert)||0;
+  // 1) Monatsrate (Annuität) bestimmen
+  let rate;
+  if (art === 'rate') {
+    rate = w;
+  } else if (art === 'laufzeit') {
+    const n = Math.round(w*12);
+    if (n <= 0) rate = 0;
+    else if (r === 0) rate = P/n;
+    else rate = P * (r / (1 - Math.pow(1+r, -n)));
+  } else { // anfängliche Tilgung in %
+    rate = P * (zinsJ + w) / 100 / 12;
+  }
+  // 2) Tilgungsplan abspulen
+  const start = k.startdatum ? new Date(k.startdatum + '-01') : new Date();
+  const now = new Date();
+  let monateVergangen = (now.getFullYear()-start.getFullYear())*12 + (now.getMonth()-start.getMonth());
+  if (monateVergangen < 0) monateVergangen = 0;
+  let warnung = null;
+  if (rate > 0 && rate <= P*r + 0.0001) warnung = 'Rate deckt nur die Zinsen — keine Tilgung.';
+  let balance = P, zinsenGezahlt = 0, getilgt = 0;
+  for (let m=0; m<monateVergangen && balance>0.005 && rate>0; m++) {
+    const zins = balance*r; let tilg = rate - zins;
+    if (tilg <= 0) break;                 // läuft nie ab
+    if (tilg > balance) tilg = balance;
+    balance -= tilg; zinsenGezahlt += zins; getilgt += tilg;
+  }
+  const restschuld = Math.max(0, balance);
+  // 3) Restmonate bis 0
+  let b2 = balance, monateRest = 0;
+  if (rate > 0) {
+    for (; b2 > 0.005 && monateRest < 1200; monateRest++) {
+      const zins = b2*r; let tilg = rate - zins;
+      if (tilg <= 0) { monateRest = Infinity; break; }
+      if (tilg > b2) tilg = b2;
+      b2 -= tilg;
+    }
+  } else monateRest = Infinity;
+  let abbezahltDatum = null;
+  if (isFinite(monateRest)) { const d = new Date(now); d.setMonth(d.getMonth()+monateRest); abbezahltDatum = d; }
+  return { rate, restschuld, getilgt, zinsenGezahlt, monateVergangen, monateRest, abbezahltDatum, warnung, ursprung:P };
+}
+
+function renderKredite() {
+  const list = krediteList();
+  const tb = $('kredite-body');
+  if (!list.length) { tb.innerHTML = `<tr><td colspan="6">${emptyState('Keine Verbindlichkeiten','Füge deinen ersten Kredit hinzu.')}</td></tr>`; return; }
+  tb.innerHTML = list.map(k=>{
+    const c = computeKredit(k);
+    const abz = (isFinite(c.monateRest) && c.abbezahltDatum) ? c.abbezahltDatum.toLocaleDateString('de-DE',{month:'short',year:'numeric'}) : '∞';
+    return `<tr>
+      <td><strong>${esc(k.name)}</strong>${k.notiz?`<div class="hint">${esc(k.notiz)}</div>`:''}${c.warnung?`<div class="hint" style="color:var(--danger)">⚠️ ${esc(c.warnung)}</div>`:''}</td>
+      <td class="num">${eur(c.restschuld)}</td>
+      <td class="num">${pct(k.zinssatz)}</td>
+      <td class="num">${eur(c.rate)}</td>
+      <td class="num">${abz}</td>
+      <td><div class="row-actions">
+        <button class="btn btn-ghost btn-sm" onclick="openKreditModal('${k.id}')">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteKredit('${k.id}')">🗑️</button>
+      </div></td></tr>`;
+  }).join('');
+}
+
+function openKreditModal(id) {
+  editKreditId = id || null;
+  $('kredit-modal-title').textContent = id ? 'Kredit bearbeiten' : 'Kredit hinzufügen';
+  $('kr-error').style.display='none';
+  const k = id ? krediteList().find(x=>x.id===id) : null;
+  $('kr-name').value = k?.name||''; $('kr-betrag').value = k?.betrag??''; $('kr-zins').value = k?.zinssatz??'';
+  $('kr-start').value = k?.startdatum||''; $('kr-art').value = k?.tilgungsart||'tilgung'; $('kr-wert').value = k?.tilgungswert??'';
+  $('kr-notiz').value = k?.notiz||'';
+  onKreditArtChange();
+  openModal('kredit-modal');
+}
+function onKreditArtChange() {
+  const art = $('kr-art').value;
+  const lab = $('kr-wert-label'), hint = $('kr-wert-hint');
+  if (art === 'laufzeit')   { lab.textContent='Laufzeit (Jahre)'; hint.textContent='z.B. 20 Jahre.'; }
+  else if (art === 'rate')  { lab.textContent='Feste Monatsrate (€)'; hint.textContent='Deine monatliche Zahlung.'; }
+  else                      { lab.textContent='Anfängliche Tilgung (%)'; hint.textContent='Üblich bei Baukrediten: 2–3 %.'; }
+  updateKreditVorschau();
+}
+function updateKreditVorschau() {
+  const k = { betrag:num($('kr-betrag').value), zinssatz:num($('kr-zins').value), startdatum:$('kr-start').value||null,
+              tilgungsart:$('kr-art').value, tilgungswert:num($('kr-wert').value) };
+  if (!k.betrag || !k.tilgungswert) { $('kr-vorschau').style.display='none'; return; }
+  const c = computeKredit(k);
+  const abz = (isFinite(c.monateRest) && c.abbezahltDatum) ? c.abbezahltDatum.toLocaleDateString('de-DE',{month:'long',year:'numeric'}) : 'läuft nie ab';
+  $('kr-vorschau').style.display='block';
+  $('kr-vorschau').innerHTML = `<strong>Monatsrate:</strong> ${eur(c.rate)} &nbsp;·&nbsp; <strong>Restschuld heute:</strong> ${eur(c.restschuld)} &nbsp;·&nbsp; <strong>abbezahlt:</strong> ${abz}${c.warnung?`<br>⚠️ ${esc(c.warnung)}`:''}`;
+}
+async function saveKredit() {
+  const name = $('kr-name').value.trim();
+  if (!name) { showErr('kr-error','Bitte eine Bezeichnung eingeben.'); return; }
+  const k = { id: editKreditId || (window.crypto?.randomUUID ? crypto.randomUUID() : 'k'+Date.now()),
+    name, betrag:num($('kr-betrag').value), zinssatz:num($('kr-zins').value),
+    startdatum:$('kr-start').value||null, tilgungsart:$('kr-art').value, tilgungswert:num($('kr-wert').value),
+    notiz:$('kr-notiz').value.trim()||null };
+  settings.extra = settings.extra || {};
+  const list = Array.isArray(settings.extra.kredite) ? settings.extra.kredite.slice() : [];
+  if (editKreditId) { const i = list.findIndex(x=>x.id===editKreditId); if (i>=0) list[i]=k; else list.push(k); }
+  else list.push(k);
+  settings.extra.kredite = list;
+  if (await persistExtra()) { closeModal('kredit-modal'); renderKredite(); renderDashboard(); toast('Kredit gespeichert ✓'); }
+}
+async function deleteKredit(id) {
+  if (!confirm('Kredit wirklich löschen?')) return;
+  settings.extra.kredite = (settings.extra.kredite||[]).filter(x=>x.id!==id);
+  if (await persistExtra()) { renderKredite(); renderDashboard(); toast('Gelöscht'); }
 }
 
 /* ============================================================

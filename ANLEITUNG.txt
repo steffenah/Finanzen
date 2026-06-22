@@ -20,9 +20,11 @@ SCHRITT 1 – Datenbank (Supabase, kostenlos)
 1. Auf supabase.com registrieren → "New Project".
 2. Im Projekt links: "SQL Editor" → den Code aus der App
    (Einrichtungsbildschirm, Knopf "SQL kopieren") einfügen → "Run".
-3. Links "Project Settings" → "API":
-   - "Project URL" und "anon public key" kopieren.
-4. App (index.html) öffnen → URL und Key eintragen → "Verbinden".
+3. Links "Project Settings":
+   - unter "General": die "Project ID" kopieren.
+   - unter "API" / "API Keys": den "anon public key" kopieren.
+4. App (index.html) öffnen → Project ID und Key eintragen → "Verbinden".
+   (Die App baut die Adresse https://[ID].supabase.co automatisch.)
 5. Beim ersten Anmelden ein Passwort festlegen (merken!).
 
 SCHRITT 2 – Kurs-/Dividenden-Abruf (optional, kostenlos)

@@ -171,11 +171,13 @@
     <ol class="steps">
       <li>Auf <strong>supabase.com</strong> kostenlos registrieren → <strong>New Project</strong> anlegen.</li>
       <li>Links im Menü auf <strong>SQL Editor</strong> → unten stehenden Code einfügen → <strong>Run</strong>.</li>
-      <li>Links auf <strong>Project Settings → API</strong>: <em>Project URL</em> und <em>anon public key</em> kopieren und unten einsetzen.</li>
+      <li><strong>Project Settings → General</strong>: <em>Project ID</em> kopieren. <strong>→ API / API Keys</strong>: <em>anon public key</em> kopieren. Beides unten einsetzen.</li>
     </ol>
     <button class="copy-btn" onclick="copySql()">📋 SQL kopieren</button>
     <div class="sql-block" id="sql-text"></div>
-    <div class="form-group"><label>Project URL</label><input id="cfg-url" placeholder="https://xxxxx.supabase.co"></div>
+    <div class="form-group"><label>Project ID</label><input id="cfg-id" placeholder="z.B. abcxyz123">
+      <div class="hint">Findest du unter Settings → General. Die App baut die Adresse <code>https://[ID].supabase.co</code> automatisch. (Eine komplette URL geht auch.)</div>
+    </div>
     <div class="form-group"><label>anon public key</label><input id="cfg-key" placeholder="eyJhbGci…"></div>
     <div class="form-error" id="cfg-error"></div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px" onclick="saveConfig()">✅ Verbinden</button>
@@ -564,9 +566,17 @@ async function loadSettingsThenAuth() {
    Config / Login
    ============================================================ */
 function saveConfig() {
-  const url = $('cfg-url').value.trim();
+  let raw = $('cfg-id').value.trim();
   const key = $('cfg-key').value.trim();
-  if (!url || !key) { $('cfg-error').style.display='block'; $('cfg-error').textContent='Bitte URL und Key eingeben.'; return; }
+  if (!raw || !key) { $('cfg-error').style.display='block'; $('cfg-error').textContent='Bitte Project ID und Key eingeben.'; return; }
+  // ID aus voller URL extrahieren, falls eingefügt; sonst nur die ID übrig lassen
+  const id = raw
+    .replace(/^https?:\/\//i, '')
+    .replace(/\.supabase\.co.*$/i, '')
+    .replace(/\/.*$/, '')
+    .trim();
+  if (!/^[a-z0-9-]+$/i.test(id)) { $('cfg-error').style.display='block'; $('cfg-error').textContent='Project ID sieht ungültig aus. Bitte nur die ID (z.B. abcxyz123) eingeben.'; return; }
+  const url = 'https://' + id + '.supabase.co';
   localStorage.setItem('fin_url', url);
   localStorage.setItem('fin_key', key);
   location.reload();

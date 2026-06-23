@@ -199,6 +199,7 @@
       <button class="nav-link" data-view="wertpapiere" onclick="showView('wertpapiere')">📈 Aktien &amp; ETFs</button>
       <button class="nav-link" data-view="dividenden" onclick="showView('dividenden')">💵 Dividenden</button>
       <button class="nav-link" data-view="steuer" onclick="showView('steuer')">🧾 Steuer</button>
+      <button class="nav-link" data-view="verlauf" onclick="showView('verlauf')">📊 Verlauf</button>
       <button class="nav-link" data-view="einstellungen" onclick="showView('einstellungen')">⚙️ Einstellungen</button>
     </nav>
     <div class="sidebar-footer">
@@ -356,6 +357,16 @@
       <div class="card"><div id="steuer-detail"></div></div>
     </section>
 
+    <!-- VERLAUF -->
+    <section class="view" id="view-verlauf">
+      <div class="view-head"><h1>📊 Vermögens-Verlauf</h1>
+        <button class="btn btn-primary" onclick="snapshotNow(true)">📸 Snapshot jetzt</button>
+      </div>
+      <div class="info-box">📅 Bei jedem Monatswechsel speichert die App automatisch einen Snapshot. So siehst du, wie sich euer Vermögen über die Zeit entwickelt — gerade während des Hausbaus motivierend.</div>
+      <div class="card" id="verlauf-chart-card"><div id="verlauf-chart"></div></div>
+      <div class="card"><div class="table-wrap" id="verlauf-tabelle"></div></div>
+    </section>
+
     <!-- EINSTELLUNGEN -->
     <section class="view" id="view-einstellungen">
       <div class="view-head"><h1>⚙️ Einstellungen</h1></div>
@@ -385,6 +396,15 @@
         <div class="form-group"><label>Alpha-Vantage API-Schlüssel</label><input id="set-avkey" placeholder="z.B. ABCD1234…"></div>
       </div>
       <button class="btn btn-primary" onclick="saveSettings()">💾 Einstellungen speichern</button>
+      <div class="card" style="margin-top:24px">
+        <h3 style="margin-bottom:8px">💾 Datensicherung</h3>
+        <p class="hint" style="margin-bottom:12px">Alle Daten (Konten, Wertpapiere, Einstellungen, Hausbau, Kredite, Verlauf) als JSON-Datei sichern. Empfehlung: ab und zu eine Sicherung herunterladen — falls Supabase mal Probleme macht oder du den Account neu aufsetzt.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="exportBackup()">⬇️ Backup herunterladen</button>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('restore-file').click()">⬆️ Backup wiederherstellen…</button>
+          <input id="restore-file" type="file" accept="application/json,.json" style="display:none" onchange="onRestoreFile(event)">
+        </div>
+      </div>
       <div class="card" style="margin-top:24px">
         <h3 style="margin-bottom:8px">Verbindung</h3>
         <p class="hint" style="margin-bottom:12px">Supabase-Datenbank zurücksetzen (Daten bleiben in der Cloud erhalten, nur die Verbindung auf diesem Gerät wird neu eingerichtet).</p>
@@ -825,7 +845,7 @@ async function reloadAll() {
   konten = k.data || [];
   wertpapiere = w.data || [];
   dividenden = d.data || [];
-  renderDashboard(); renderKonten(); renderWp(); renderDividenden(); renderSteuer(); renderKredite(); renderAusgaben(); renderHausbau();
+  renderDashboard(); renderKonten(); renderWp(); renderDividenden(); renderSteuer(); renderKredite(); renderAusgaben(); renderHausbau(); renderVerlauf();
 }
 
 /* ============================================================
@@ -859,6 +879,8 @@ function renderDashboard() {
   const fixMonat = fixAusgabenMonat();
   const kreditMonat = kreditRatenMonat();
   const ueberschuss = haushaltNetto - fixMonat - kreditMonat;
+  const monatKosten = fixMonat + kreditMonat;
+  const notgroschenMon = monatKosten > 0 ? kontenSumme / monatKosten : 0;
   $('dash-stats').innerHTML = `
     <div class="stat accent"><div class="label">💰 Gesamtvermögen</div><div class="value">${eur(gesamt)}</div><div class="sub">${konten.length} Konten · ${wertpapiere.length} WP${hausbau>0?' · inkl. Hausbau':''}</div></div>
     ${restschuldSum>0?`<div class="stat accent"><div class="label">⚖️ Reales Gesamtvermögen</div><div class="value">${eur(realesVermoegen)}</div><div class="sub">Vermögen − Kredite (${eur(restschuldSum)})</div></div>`:''}
@@ -870,7 +892,8 @@ function renderDashboard() {
     <div class="stat"><div class="label">🧾 Steuer p.a. (Schätzung)</div><div class="value">${eur(st.gesamt)}</div><div class="sub">Kapitalertrag netto: ${eur(netto)}</div></div>
     ${haushaltNetto>0?`<div class="stat"><div class="label">💶 Haushaltseinkommen / Monat</div><div class="value">${eur(haushaltNetto)}</div><div class="sub">netto, inkl. Kindergeld${kapMonat>0?` & ${eur(kapMonat)} Kapitalerträge`:''}</div></div>`:''}
     ${fixMonat>0?`<div class="stat"><div class="label">💸 Fixe Ausgaben / Monat</div><div class="value neg">−${eur(fixMonat)}</div></div>`:''}
-    ${haushaltNetto>0?`<div class="stat"><div class="label">📊 Überschuss / Monat</div><div class="value ${ueberschuss<0?'neg':'pos'}">${eur(ueberschuss)}</div><div class="sub">Einkommen − Fixkosten − Kreditraten</div></div>`:''}`;
+    ${haushaltNetto>0?`<div class="stat"><div class="label">📊 Überschuss / Monat</div><div class="value ${ueberschuss<0?'neg':'pos'}">${eur(ueberschuss)}</div><div class="sub">Einkommen − Fixkosten − Kreditraten</div></div>`:''}
+    ${kontenSumme>0 && monatKosten>0?`<div class="stat"><div class="label">🛡️ Notgroschen reicht für</div><div class="value ${notgroschenMon<3?'neg':notgroschenMon<6?'':'pos'}">${notgroschenMon.toFixed(1)} Monate</div><div class="sub">Konten ohne Einkommen → Fix + Kredit</div></div>`:''}`;
 
   const rows = [
     ...konten.map(k=>({ label:k.name+(k.bank&&k.bank!=='— manuell —'?' · '+k.bank:''), wert:Number(k.bestand)||0, typ:'Konto' })),
@@ -1124,6 +1147,7 @@ async function dismissReview() {
   const cur = new Date().toISOString().slice(0,7);
   settings.last_review_month = cur;
   await sb.from('fin_einstellungen').update({ last_review_month: cur }).eq('id',1);
+  await snapshotNow();          // automatischer Monats-Snapshot
   closeModal('review-modal');
 }
 
@@ -1488,6 +1512,131 @@ async function deleteKredit(id) {
   if (!confirm('Kredit wirklich löschen?')) return;
   settings.extra.kredite = (settings.extra.kredite||[]).filter(x=>x.id!==id);
   if (await persistExtra()) { renderKredite(); renderDashboard(); toast('Gelöscht'); }
+}
+
+/* ============================================================
+   Vermögens-Verlauf (Monats-Snapshots + Chart)
+   ============================================================ */
+function historyList(){ return (settings.extra?.history) || []; }
+async function snapshotNow(manuell=false) {
+  const kontenSumme = konten.reduce((s,k)=> s + (Number(k.bestand)||0), 0);
+  const wpSumme = wertpapiere.reduce((s,w)=> s + wpWert(w), 0);
+  const hausbau = hausbauAusgegebenTotal();
+  const restschuld = krediteList().reduce((s,k)=> s + computeKredit(k).restschuld, 0);
+  const vermoegen = kontenSumme + wpSumme + hausbau;
+  const real = vermoegen - restschuld;
+  const d = new Date().toISOString().slice(0,10);
+  const entry = { d, vermoegen, schulden:restschuld, real, konten:kontenSumme, wp:wpSumme, hausbau };
+  settings.extra = settings.extra || {};
+  const hist = (settings.extra.history || []).slice();
+  const i = hist.findIndex(x => x.d === d);
+  if (i >= 0) hist[i] = entry; else hist.push(entry);
+  hist.sort((a,b) => a.d.localeCompare(b.d));
+  settings.extra.history = hist;
+  if (await persistExtra()) {
+    if (manuell) toast('Snapshot gespeichert ✓');
+    renderVerlauf();
+  }
+}
+async function deleteSnapshot(d){
+  if (!confirm('Snapshot löschen?')) return;
+  settings.extra.history = (settings.extra.history||[]).filter(x => x.d !== d);
+  if (await persistExtra()) { renderVerlauf(); toast('Gelöscht'); }
+}
+function renderVerlauf() {
+  const hist = historyList();
+  if (!hist.length) {
+    $('verlauf-chart').innerHTML = emptyState('Noch keine Snapshots','Klick oben auf „Snapshot jetzt" oder warte den nächsten Monatswechsel ab.');
+    $('verlauf-tabelle').innerHTML = '';
+    return;
+  }
+  $('verlauf-chart').innerHTML = renderChart(hist);
+  $('verlauf-tabelle').innerHTML = `<table>
+    <thead><tr><th>Datum</th><th class="num">Vermögen</th><th class="num">Schulden</th><th class="num">Real</th><th></th></tr></thead>
+    <tbody>${hist.slice().reverse().map(e => `
+      <tr><td>${new Date(e.d).toLocaleDateString('de-DE')}</td>
+        <td class="num">${eur(e.vermoegen)}</td>
+        <td class="num neg">−${eur(e.schulden)}</td>
+        <td class="num"><strong>${eur(e.real)}</strong></td>
+        <td><button class="btn btn-danger btn-sm" onclick="deleteSnapshot('${e.d}')">🗑️</button></td></tr>`).join('')}</tbody></table>`;
+}
+function renderChart(hist) {
+  const W=720, H=300, padL=70, padR=24, padT=20, padB=44;
+  const innerW=W-padL-padR, innerH=H-padT-padB;
+  const xs = hist.map(e=>new Date(e.d).getTime());
+  const ys = hist.flatMap(e=>[e.vermoegen, e.schulden, e.real]);
+  const xMin = Math.min(...xs), xMax = Math.max(...xs);
+  const yMax = Math.max(...ys, 0), yMin = Math.min(...ys, 0);
+  const xS = x => padL + (xMax===xMin ? innerW/2 : (x-xMin)/(xMax-xMin)*innerW);
+  const yS = y => padT + innerH - (y-yMin)/((yMax-yMin)||1)*innerH;
+  const path = key => hist.map((e,i) => (i===0?'M':'L') + xS(new Date(e.d).getTime()).toFixed(1) + ',' + yS(e[key]).toFixed(1)).join(' ');
+  const tickCount = 4, ticks = [];
+  for (let i=0; i<=tickCount; i++) { const y = yMin + (yMax-yMin)*i/tickCount; ticks.push({y, sy:yS(y)}); }
+  const xLabels = hist.length<=4 ? hist : [hist[0], hist[Math.floor(hist.length/3)], hist[Math.floor(hist.length*2/3)], hist[hist.length-1]];
+  const fmtTick = v => Math.abs(v) >= 1000 ? Math.round(v/1000)+'k €' : Math.round(v)+' €';
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" preserveAspectRatio="xMidYMid meet">
+    ${ticks.map(t => `<line x1="${padL}" y1="${t.sy.toFixed(1)}" x2="${W-padR}" y2="${t.sy.toFixed(1)}" stroke="#e2e8f0" stroke-width="1"/><text x="${padL-8}" y="${(t.sy+4).toFixed(1)}" text-anchor="end" font-size="11" fill="#64748b">${fmtTick(t.y)}</text>`).join('')}
+    ${yMin<0 ? `<line x1="${padL}" y1="${yS(0).toFixed(1)}" x2="${W-padR}" y2="${yS(0).toFixed(1)}" stroke="#94a3b8" stroke-width="1.5"/>` : ''}
+    <path d="${path('vermoegen')}" stroke="#10b981" stroke-width="2.5" fill="none"/>
+    <path d="${path('schulden')}" stroke="#dc2626" stroke-width="2.5" fill="none"/>
+    <path d="${path('real')}" stroke="#047857" stroke-width="3" fill="none" stroke-dasharray="6,3"/>
+    ${hist.map(e => `<circle cx="${xS(new Date(e.d).getTime()).toFixed(1)}" cy="${yS(e.real).toFixed(1)}" r="3" fill="#047857"/>`).join('')}
+    ${xLabels.map(e => `<text x="${xS(new Date(e.d).getTime()).toFixed(1)}" y="${H-padB+18}" text-anchor="middle" font-size="11" fill="#64748b">${new Date(e.d).toLocaleDateString('de-DE',{month:'short',year:'2-digit'})}</text>`).join('')}
+    <g transform="translate(${padL+10},${padT+5})">
+      <rect x="0" y="0" width="180" height="58" fill="white" stroke="#e2e8f0" rx="6" opacity="0.95"/>
+      <line x1="10" y1="14" x2="30" y2="14" stroke="#10b981" stroke-width="2.5"/><text x="36" y="18" font-size="11" fill="#334155">Vermögen</text>
+      <line x1="10" y1="30" x2="30" y2="30" stroke="#dc2626" stroke-width="2.5"/><text x="36" y="34" font-size="11" fill="#334155">Schulden</text>
+      <line x1="10" y1="46" x2="30" y2="46" stroke="#047857" stroke-width="3" stroke-dasharray="6,3"/><text x="36" y="50" font-size="11" fill="#334155">Reales Vermögen</text>
+    </g>
+  </svg>`;
+}
+
+/* ============================================================
+   Backup / Restore (JSON-Datei)
+   ============================================================ */
+async function exportBackup() {
+  const all = {
+    meta: { app:'finanzen', version:1, exportedAt: new Date().toISOString() },
+    einstellungen: settings, konten, wertpapiere, dividenden
+  };
+  const blob = new Blob([JSON.stringify(all, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `finanzen-backup-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('Backup heruntergeladen ✓');
+}
+async function onRestoreFile(e) {
+  const file = e.target.files[0]; e.target.value = '';
+  if (!file) return;
+  let data;
+  try { data = JSON.parse(await file.text()); }
+  catch { alert('Die Datei ist keine gültige JSON-Datei.'); return; }
+  if (data.meta?.app !== 'finanzen' && !data.konten && !data.einstellungen) {
+    if (!confirm('Diese Datei sieht nicht wie ein Finanzen-Backup aus. Trotzdem importieren?')) return;
+  }
+  if (!confirm('⚠️ ACHTUNG: Alle aktuellen Daten in der Cloud werden GELÖSCHT und durch das Backup ersetzt!\n\nWirklich fortfahren?')) return;
+  try {
+    await sb.from('fin_dividenden').delete().not('id','is',null);
+    await sb.from('fin_wertpapiere').delete().not('id','is',null);
+    await sb.from('fin_konten').delete().not('id','is',null);
+    if (data.konten?.length)      await sb.from('fin_konten').insert(data.konten);
+    if (data.wertpapiere?.length) await sb.from('fin_wertpapiere').insert(data.wertpapiere);
+    if (data.dividenden?.length)  await sb.from('fin_dividenden').insert(data.dividenden);
+    if (data.einstellungen) {
+      const e = data.einstellungen;
+      await sb.from('fin_einstellungen').update({
+        familienstand: e.familienstand, kirchensteuer: e.kirchensteuer,
+        kirchensteuersatz: e.kirchensteuersatz, av_api_key: e.av_api_key,
+        passwort: e.passwort, last_review_month: e.last_review_month, extra: e.extra
+      }).eq('id', 1);
+    }
+    alert('Backup wiederhergestellt ✓\n\nDie App wird jetzt neu geladen.');
+    location.reload();
+  } catch (err) {
+    alert('Fehler beim Import: ' + (err.message || err));
+  }
 }
 
 /* ============================================================

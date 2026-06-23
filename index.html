@@ -996,7 +996,8 @@ function renderDashboard() {
   const kreditMonat = kreditRatenMonat();
   const ueberschuss = haushaltNetto - fixMonat - kreditMonat;
   const monatKosten = fixMonat + kreditMonat;
-  const notgroschenMon = monatKosten > 0 ? kontenSumme / monatKosten : 0;
+  const notgroschenBasis = Math.max(0, kontenSumme + wpSumme - hausbauOffen);
+  const notgroschenMon = monatKosten > 0 ? notgroschenBasis / monatKosten : 0;
   $('dash-stats').innerHTML = `
     <div class="stat accent"><div class="label">💰 Gesamtvermögen</div><div class="value">${eur(gesamt)}</div><div class="sub">${konten.length} Konten · ${wertpapiere.length} WP${hausbau>0?' · inkl. Hausbau':''}</div></div>
     ${restschuldSum>0?`<div class="stat accent"><div class="label">⚖️ Reales Gesamtvermögen</div><div class="value">${eur(realesVermoegen)}</div><div class="sub">Vermögen − Kredite (${eur(restschuldSum)})</div></div>`:''}
@@ -1009,7 +1010,7 @@ function renderDashboard() {
     ${haushaltNetto>0?`<div class="stat"><div class="label">💶 Haushaltseinkommen / Monat</div><div class="value">${eur(haushaltNetto)}</div><div class="sub">netto, inkl. Kindergeld${kapMonat>0?` & ${eur(kapMonat)} Kapitalerträge`:''}</div></div>`:''}
     ${fixMonat>0?`<div class="stat"><div class="label">💸 Fixe Ausgaben / Monat</div><div class="value neg">−${eur(fixMonat)}</div></div>`:''}
     ${haushaltNetto>0?`<div class="stat"><div class="label">📊 Überschuss / Monat</div><div class="value ${ueberschuss<0?'neg':'pos'}">${eur(ueberschuss)}</div><div class="sub">Einkommen − Fixkosten − Kreditraten</div></div>`:''}
-    ${kontenSumme>0 && monatKosten>0?`<div class="stat"><div class="label">🛡️ Notgroschen reicht für</div><div class="value ${notgroschenMon<3?'neg':notgroschenMon<6?'':'pos'}">${notgroschenMon.toFixed(1)} Monate</div><div class="sub">Konten ohne Einkommen → Fix + Kredit</div></div>`:''}`;
+    ${monatKosten>0?`<div class="stat"><div class="label">🛡️ Notgroschen reicht für</div><div class="value ${notgroschenMon<3?'neg':notgroschenMon<6?'':'pos'}">${notgroschenMon.toFixed(1)} Monate</div><div class="sub">nach Hausbau (${eur(notgroschenBasis)}) ÷ Fix + Kredit</div></div>`:''}`;
 
   const rows = [
     ...konten.map(k=>({ label:k.name+(k.bank&&k.bank!=='— manuell —'?' · '+k.bank:''), wert:Number(k.bestand)||0, typ:'Konto' })),

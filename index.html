@@ -131,6 +131,13 @@
   .spinner { width:38px; height:38px; border:4px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.7s linear infinite; }
   @keyframes spin { to { transform:rotate(360deg); } }
 
+  /* PWA-Install-Banner */
+  #install-banner { position:fixed; bottom:18px; right:18px; z-index:400; background:var(--primary); color:white; padding:11px 16px; border-radius:999px; cursor:pointer; box-shadow:0 8px 24px rgba(4,120,87,0.4); font-size:0.9rem; font-weight:600; display:none; align-items:center; gap:8px; border:none; font-family:inherit; }
+  #install-banner:hover { background:var(--primary-dark); }
+  #install-banner.visible { display:inline-flex; }
+  #install-banner .ibclose { background:rgba(255,255,255,0.2); border-radius:50%; width:20px; height:20px; display:inline-flex; align-items:center; justify-content:center; font-size:0.75rem; margin-left:4px; }
+  @media (max-width:768px) { #install-banner { bottom:14px; right:14px; left:14px; justify-content:center; } }
+
   /* Vermögens-Slider */
   .vslider-row { display:flex; align-items:center; gap:14px; margin:14px 0 18px; flex-wrap:wrap; }
   .vslider { flex:1; min-width:200px; height:6px; }
@@ -693,6 +700,11 @@ Santander Bank | 100147.21 | 3.3"></textarea>
   </div>
 </div>
 
+<button id="install-banner" onclick="installApp()" type="button">
+  <span>📲 App installieren</span>
+  <span class="ibclose" onclick="event.stopPropagation();hideInstall()">×</span>
+</button>
+
 <div id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -818,8 +830,37 @@ function berechneSteuer() {
    ============================================================ */
 window.addEventListener('DOMContentLoaded', init);
 
+/* ---- PWA Install-Prompt (Android/Chrome/Edge) ---- */
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  if (!localStorage.getItem('install_dismissed') && !isStandalone()) showInstall();
+});
+window.addEventListener('appinstalled', () => { deferredInstallPrompt = null; hideInstall(); });
+function isStandalone(){ return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true; }
+function showInstall(){ const b=document.getElementById('install-banner'); if (b) b.classList.add('visible'); }
+function hideInstall(){ const b=document.getElementById('install-banner'); if (b) b.classList.remove('visible'); localStorage.setItem('install_dismissed','1'); }
+async function installApp(){
+  if (!deferredInstallPrompt) {
+    // iOS Safari (kein beforeinstallprompt) — Anleitung zeigen
+    alert('Zum Installieren auf iPhone:\n\n1. Unten in der Mitte das Teilen-Symbol antippen\n2. „Zum Home-Bildschirm" wählen\n3. Oben rechts „Hinzufügen"');
+    return;
+  }
+  deferredInstallPrompt.prompt();
+  const choice = await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  hideInstall();
+  if (choice?.outcome === 'accepted') toast('App installiert ✓');
+}
+
 function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+  // iOS: kein beforeinstallprompt-Event — Knopf trotzdem zeigen, wenn nicht standalone
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  if (isIOS && !isStandalone() && !localStorage.getItem('install_dismissed')) {
+    setTimeout(showInstall, 2000);
+  }
   buildBankSelect();
   $('sql-text').textContent = SQL;
   const url = localStorage.getItem('fin_url');

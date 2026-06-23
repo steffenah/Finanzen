@@ -502,6 +502,20 @@
         </div>
       </div>
       <div class="card" style="margin-top:24px">
+        <h3 style="margin-bottom:8px">📲 Auf weiteres Gerät übertragen</h3>
+        <p class="hint" style="margin-bottom:12px">Du sparst dir die manuelle Eingabe von Project ID + Key auf dem Handy: Erzeuge unten einen Setup-Link, schick ihn dir aufs Handy (WhatsApp / Mail) oder scan den QR-Code. Beim Öffnen ist die Verbindung dort sofort eingerichtet — du musst nur noch dein Passwort eingeben.</p>
+        <button class="btn btn-primary btn-sm" onclick="showSetupTransfer()">🔗 Setup-Link erzeugen</button>
+        <div id="setup-transfer" style="display:none;margin-top:14px">
+          <label style="font-size:0.82rem;color:var(--muted);margin-bottom:5px;display:block">Setup-Link (einmalig auf neuem Gerät öffnen)</label>
+          <div style="display:flex;gap:8px;align-items:flex-start">
+            <input id="setup-link" readonly style="font-family:monospace;font-size:0.78rem">
+            <button class="btn btn-ghost btn-sm" onclick="copySetupLink()">📋</button>
+          </div>
+          <div id="setup-qr" style="margin-top:14px;text-align:center"></div>
+          <p class="hint" style="margin-top:10px">⚠️ Behandle den Link wie ein Passwort — wer ihn hat, kommt an deine Daten (sofern er das App-Passwort kennt).</p>
+        </div>
+      </div>
+      <div class="card" style="margin-top:24px">
         <h3 style="margin-bottom:8px">Verbindung</h3>
         <p class="hint" style="margin-bottom:12px">Supabase-Datenbank zurücksetzen (Daten bleiben in der Cloud erhalten, nur die Verbindung auf diesem Gerät wird neu eingerichtet).</p>
         <button class="btn btn-ghost btn-sm" onclick="resetConnection()">🔌 Verbindung zurücksetzen</button>
@@ -708,6 +722,7 @@ Santander Bank | 100147.21 | 3.3"></textarea>
 <div id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script>
 /* ============================================================
    Konfiguration & globaler Zustand
@@ -854,8 +869,51 @@ async function installApp(){
   if (choice?.outcome === 'accepted') toast('App installiert ✓');
 }
 
+/* ---- Setup-Link verarbeiten (vom Hauptgerät) ---- */
+function processSetupHash() {
+  if (!location.hash.startsWith('#setup=')) return false;
+  try {
+    const b64 = decodeURIComponent(location.hash.slice(7));
+    const decoded = atob(b64);
+    const [url, key] = decoded.split('|');
+    if (!url || !key) return false;
+    localStorage.setItem('fin_url', url);
+    localStorage.setItem('fin_key', key);
+    history.replaceState(null, '', location.pathname + location.search);
+    return true;
+  } catch { return false; }
+}
+function generateSetupUrl() {
+  const url = localStorage.getItem('fin_url') || '';
+  const key = localStorage.getItem('fin_key') || '';
+  if (!url || !key) return null;
+  const b64 = btoa(url + '|' + key);
+  return location.origin + location.pathname + '#setup=' + encodeURIComponent(b64);
+}
+function showSetupTransfer() {
+  const link = generateSetupUrl();
+  if (!link) { toast('Erst Supabase einrichten'); return; }
+  $('setup-link').value = link;
+  $('setup-transfer').style.display = 'block';
+  // QR
+  const qrBox = $('setup-qr');
+  qrBox.innerHTML = '';
+  if (typeof qrcode === 'function') {
+    try {
+      const qr = qrcode(0, 'M');
+      qr.addData(link);
+      qr.make();
+      qrBox.innerHTML = qr.createSvgTag({ scalable:true, margin:2 }).replace('<svg', '<svg style="width:200px;height:200px;background:white;padding:8px;border-radius:8px"');
+    } catch(e) {
+      qrBox.innerHTML = '<p class="hint">QR-Code konnte nicht erzeugt werden — nutze den Link.</p>';
+    }
+  }
+}
+function copySetupLink(){ navigator.clipboard.writeText($('setup-link').value).then(()=>toast('Link kopiert ✓')); }
+
 function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+  processSetupHash();      // Setup-Link aus URL auslesen, falls vorhanden
   // iOS: kein beforeinstallprompt-Event — Knopf trotzdem zeigen, wenn nicht standalone
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
   if (isIOS && !isStandalone() && !localStorage.getItem('install_dismissed')) {

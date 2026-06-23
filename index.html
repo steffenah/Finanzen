@@ -194,6 +194,7 @@
       <button class="nav-link" data-view="konten" onclick="showView('konten')">🏦 Konten</button>
       <button class="nav-link" data-view="einkommen" onclick="showView('einkommen')">💶 Einkommen</button>
       <button class="nav-link" data-view="kredite" onclick="showView('kredite')">💳 Verbindlichkeiten</button>
+      <button class="nav-link" data-view="hausbau" onclick="showView('hausbau')">🏗️ Hausbau</button>
       <button class="nav-link" data-view="ausgaben" onclick="showView('ausgaben')">💸 Fixe Ausgaben</button>
       <button class="nav-link" data-view="wertpapiere" onclick="showView('wertpapiere')">📈 Aktien &amp; ETFs</button>
       <button class="nav-link" data-view="dividenden" onclick="showView('dividenden')">💵 Dividenden</button>
@@ -276,6 +277,42 @@
         <thead><tr><th>Name</th><th class="num">Restschuld</th><th class="num">Zins</th><th class="num">Monatsrate</th><th class="num">abbezahlt ca.</th><th></th></tr></thead>
         <tbody id="kredite-body"></tbody>
       </table></div></div>
+    </section>
+
+    <!-- HAUSBAU -->
+    <section class="view" id="view-hausbau">
+      <div class="view-head"><h1>🏗️ Hausbau</h1>
+        <button class="btn btn-primary" onclick="openGewerkModal()">＋ Gewerk hinzufügen</button>
+      </div>
+      <div class="stats-grid" id="hausbau-stats"></div>
+      <div class="card">
+        <h2 style="margin-bottom:14px">Gewerke</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Gewerk</th><th class="num">Auftragswert</th><th class="num">Bezahlt</th><th class="num">Offen</th><th></th></tr></thead>
+          <tbody id="gewerke-body"></tbody>
+        </table></div>
+      </div>
+      <div class="card">
+        <h2 style="margin-bottom:14px">⏳ Bauende &amp; Sonstiges</h2>
+        <div class="row">
+          <div class="form-group"><label>Voraussichtliches Bauende</label><input id="hb-ende" type="date"></div>
+          <div class="form-group"><label>Übertrag bereits ausgegeben (vor Gewerkeerfassung, €)</label><input id="hb-uebertrag" type="number" step="0.01">
+            <div class="hint">Wird zur Summe „bereits ausgegeben" addiert.</div></div>
+        </div>
+        <button class="btn btn-primary" onclick="saveHausbauMeta()">💾 Speichern</button>
+      </div>
+      <div class="card">
+        <h2 style="margin-bottom:6px">🔮 Barvermögens-Prognose</h2>
+        <p class="hint" style="margin-bottom:14px">Stichtag eingeben → die App rechnet bis dahin: Einkommen + Konten − Fixkosten − Kreditraten − noch offene Bauausgaben.</p>
+        <div class="row">
+          <div class="form-group"><label>Stichtag</label><input id="hb-prog-datum" type="date" oninput="renderPrognose()"></div>
+          <div class="form-group"><label>Basis</label><select id="hb-prog-basis" onchange="renderPrognose()">
+            <option value="konten">Barvermögen (Konten)</option>
+            <option value="liquide">Liquides Vermögen (Konten + Wertpapiere)</option>
+          </select></div>
+        </div>
+        <div id="hb-prognose" class="info-box" style="display:none"></div>
+      </div>
     </section>
 
     <!-- FIXE AUSGABEN -->
@@ -393,6 +430,24 @@ Santander Bank | 100147.21 | 3.3"></textarea>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('import-modal')">Abbrechen</button>
       <button class="btn btn-primary" onclick="doImport()">Importieren</button>
+    </div>
+  </div>
+</div>
+
+<!-- Gewerk -->
+<div class="modal-overlay" id="gewerk-modal">
+  <div class="modal">
+    <div class="modal-head"><h2 id="gewerk-modal-title">Gewerk hinzufügen</h2><button class="modal-close" onclick="closeModal('gewerk-modal')">×</button></div>
+    <div class="form-group"><label>Bezeichnung *</label><input id="gw-name" placeholder="z.B. 06_Elektro"></div>
+    <div class="row">
+      <div class="form-group"><label>Auftragswert (€)</label><input id="gw-auftrag" type="number" step="0.01" placeholder="0,00"></div>
+      <div class="form-group"><label>Bereits bezahlt (€)</label><input id="gw-bezahlt" type="number" step="0.01" placeholder="0,00"></div>
+    </div>
+    <div class="form-group"><label>Notiz</label><input id="gw-notiz" placeholder="optional"></div>
+    <div class="form-error" id="gw-error"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('gewerk-modal')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveGewerk()">Speichern</button>
     </div>
   </div>
 </div>
@@ -750,8 +805,11 @@ function logout() {
 async function enterApp() {
   showScreen('app');
   await reloadAll();
+  await seedGewerkeIfEmpty();
   applySettingsToForm();
   showEinkommenFromSettings();
+  renderHausbau();
+  renderDashboard();
   checkMonthlyReview();
 }
 
@@ -767,7 +825,7 @@ async function reloadAll() {
   konten = k.data || [];
   wertpapiere = w.data || [];
   dividenden = d.data || [];
-  renderDashboard(); renderKonten(); renderWp(); renderDividenden(); renderSteuer(); renderKredite(); renderAusgaben();
+  renderDashboard(); renderKonten(); renderWp(); renderDividenden(); renderSteuer(); renderKredite(); renderAusgaben(); renderHausbau();
 }
 
 /* ============================================================
@@ -789,7 +847,8 @@ function closeSidebar(){ $('sidebar').classList.remove('open'); $('overlay').cla
 function renderDashboard() {
   const kontenSumme = konten.reduce((s,k)=> s + (Number(k.bestand)||0), 0);
   const wpSumme = wertpapiere.reduce((s,w)=> s + wpWert(w), 0);
-  const hausbau = Number((settings.extra||{}).hausbauAusgegeben)||0;
+  const hausbau = hausbauAusgegebenTotal();                // = Gewerk-bezahlt + Übertrag
+  const hausbauOffen = gewerkeOffenSum();
   const gesamt = kontenSumme + wpSumme + hausbau;          // Hausbau-Ausgaben zählen als Vermögen (steckt im Haus)
   const st = berechneSteuer();
   const netto = st.zinsertrag + st.divBrutto - st.gesamt;
@@ -806,6 +865,7 @@ function renderDashboard() {
     <div class="stat"><div class="label">🏦 Konten</div><div class="value">${eur(kontenSumme)}</div><div class="sub">Zinsen p.a.: ${eur(st.zinsertrag)}</div></div>
     <div class="stat"><div class="label">📈 Wertpapiere</div><div class="value">${eur(wpSumme)}</div><div class="sub">Dividende p.a. (Prognose): ${eur(st.divBrutto)}</div></div>
     ${hausbau>0?`<div class="stat"><div class="label">🏗️ Für Hausbau ausgegeben</div><div class="value">${eur(hausbau)}</div><div class="sub">im Gesamtvermögen enthalten</div></div>`:''}
+    ${hausbauOffen>0?`<div class="stat"><div class="label">🧱 Hausbau noch offen</div><div class="value neg">−${eur(hausbauOffen)}</div><div class="sub">offene Aufträge</div></div>`:''}
     ${restschuldSum>0?`<div class="stat"><div class="label">💳 Verbindlichkeiten</div><div class="value neg">−${eur(restschuldSum)}</div></div>`:''}
     <div class="stat"><div class="label">🧾 Steuer p.a. (Schätzung)</div><div class="value">${eur(st.gesamt)}</div><div class="sub">Kapitalertrag netto: ${eur(netto)}</div></div>
     ${haushaltNetto>0?`<div class="stat"><div class="label">💶 Haushaltseinkommen / Monat</div><div class="value">${eur(haushaltNetto)}</div><div class="sub">netto, inkl. Kindergeld${kapMonat>0?` & ${eur(kapMonat)} Kapitalerträge`:''}</div></div>`:''}
@@ -1422,6 +1482,172 @@ async function deleteKredit(id) {
   if (!confirm('Kredit wirklich löschen?')) return;
   settings.extra.kredite = (settings.extra.kredite||[]).filter(x=>x.id!==id);
   if (await persistExtra()) { renderKredite(); renderDashboard(); toast('Gelöscht'); }
+}
+
+/* ============================================================
+   Hausbau — Gewerke, Bauende & Barvermögens-Prognose
+   ============================================================ */
+const GEWERKE_DEFAULT = [
+  '01_Architekt','02_Keller','02.1_Kellerfenster','03_Holzrahmenbau',
+  '04_Photovoltaik','05_Fenster_Haus-Tueren','06_Elektro',
+  '07_Sanitaer/Badezimmer','08_Heizung_Lueftung','09_Estrich',
+  '10_Trockenbau','11_Bodenbelaege','12_Malerarbeiten','13_Außenanlagen',
+  '14_Grundstück inkl. Grunderwerbssteuer','15_Küche','16_Energieberater',
+  '17_Verblender inkl.Baustelleneinrichtung','17_Sonstiges/Versicherungen',
+  '17_Bodengutachten','18_Erdarbeiten inkl. Grundwassersenkung',
+  '19_Innentüren','20_Treppenverkleidung&Geländer','21_Bausachverständiger'
+];
+let editGewerkId = null;
+function gewerkeList(){ return (settings.extra && Array.isArray(settings.extra.gewerke)) ? settings.extra.gewerke : []; }
+function gewerkeAuftragSum(){ return gewerkeList().reduce((s,g)=> s + (Number(g.auftrag)||0), 0); }
+function gewerkeBezahltSum(){ return gewerkeList().reduce((s,g)=> s + (Number(g.bezahlt)||0), 0); }
+function gewerkeOffenSum(){ return gewerkeList().reduce((s,g)=> s + Math.max(0, (Number(g.auftrag)||0) - (Number(g.bezahlt)||0)), 0); }
+function hausbauUebertrag(){ return Number((settings.extra||{}).hausbauAusgegeben)||0; }
+function hausbauAusgegebenTotal(){ return gewerkeBezahltSum() + hausbauUebertrag(); }
+
+async function seedGewerkeIfEmpty(){
+  if (gewerkeList().length === 0) {
+    settings.extra = settings.extra || {};
+    settings.extra.gewerke = GEWERKE_DEFAULT.map(name=>({
+      id: (window.crypto?.randomUUID ? crypto.randomUUID() : 'g'+Math.random().toString(36).slice(2,10)),
+      name, auftrag:0, bezahlt:0, notiz:null
+    }));
+    await persistExtra();
+  }
+}
+
+function renderHausbau(){
+  const auftr = gewerkeAuftragSum(), bez = gewerkeBezahltSum(), offen = gewerkeOffenSum();
+  const totalAusgeg = hausbauAusgegebenTotal();
+  $('hausbau-stats').innerHTML = `
+    <div class="stat accent"><div class="label">🏗️ Bereits ausgegeben</div><div class="value">${eur(totalAusgeg)}</div><div class="sub">${eur(bez)} aus Gewerken + ${eur(hausbauUebertrag())} Übertrag</div></div>
+    <div class="stat"><div class="label">📋 Auftragsvolumen gesamt</div><div class="value">${eur(auftr)}</div><div class="sub">${gewerkeList().length} Gewerke</div></div>
+    <div class="stat"><div class="label">⏳ Noch offen (kommt noch)</div><div class="value neg">${eur(offen)}</div></div>`;
+
+  const list = gewerkeList();
+  const tb = $('gewerke-body');
+  if (!list.length) { tb.innerHTML = `<tr><td colspan="5">${emptyState('Keine Gewerke','Füge dein erstes Gewerk hinzu.')}</td></tr>`; }
+  else {
+    tb.innerHTML = list.map(g=>{
+      const a = Number(g.auftrag)||0, b = Number(g.bezahlt)||0, o = Math.max(0, a-b);
+      const pct = a>0 ? Math.min(100, b/a*100) : 0;
+      return `<tr>
+        <td><strong>${esc(g.name)}</strong>${g.notiz?`<div class="hint">${esc(g.notiz)}</div>`:''}
+          ${a>0?`<div style="height:5px;background:var(--bg);border-radius:99px;overflow:hidden;margin-top:5px;max-width:200px"><div style="height:100%;width:${pct}%;background:var(--accent)"></div></div>`:''}</td>
+        <td class="num">${eur(a)}</td>
+        <td class="num">${eur(b)}</td>
+        <td class="num ${o>0?'neg':''}">${eur(o)}</td>
+        <td><div class="row-actions">
+          <button class="btn btn-ghost btn-sm" onclick="openGewerkModal('${g.id}')">✏️</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteGewerk('${g.id}')">🗑️</button>
+        </div></td></tr>`;
+    }).join('');
+  }
+  // Bauende + Übertrag-Felder
+  $('hb-ende').value = (settings.extra||{}).bauende || '';
+  $('hb-uebertrag').value = hausbauUebertrag() || '';
+  renderPrognose();
+}
+
+function openGewerkModal(id){
+  editGewerkId = id || null;
+  $('gewerk-modal-title').textContent = id ? 'Gewerk bearbeiten' : 'Gewerk hinzufügen';
+  $('gw-error').style.display='none';
+  const g = id ? gewerkeList().find(x=>x.id===id) : null;
+  $('gw-name').value = g?.name||''; $('gw-auftrag').value = g?.auftrag??''; $('gw-bezahlt').value = g?.bezahlt??''; $('gw-notiz').value = g?.notiz||'';
+  openModal('gewerk-modal');
+}
+async function saveGewerk(){
+  const name = $('gw-name').value.trim();
+  if (!name) { showErr('gw-error','Bitte eine Bezeichnung eingeben.'); return; }
+  const g = { id: editGewerkId || (window.crypto?.randomUUID ? crypto.randomUUID() : 'g'+Date.now()),
+    name, auftrag:num($('gw-auftrag').value), bezahlt:num($('gw-bezahlt').value), notiz:$('gw-notiz').value.trim()||null };
+  settings.extra = settings.extra || {};
+  const list = Array.isArray(settings.extra.gewerke) ? settings.extra.gewerke.slice() : [];
+  if (editGewerkId) { const i = list.findIndex(x=>x.id===editGewerkId); if (i>=0) list[i]=g; else list.push(g); }
+  else list.push(g);
+  settings.extra.gewerke = list;
+  if (await persistExtra()) { closeModal('gewerk-modal'); renderHausbau(); renderDashboard(); toast('Gewerk gespeichert ✓'); }
+}
+async function deleteGewerk(id){
+  if (!confirm('Gewerk wirklich löschen?')) return;
+  settings.extra.gewerke = (settings.extra.gewerke||[]).filter(x=>x.id!==id);
+  if (await persistExtra()) { renderHausbau(); renderDashboard(); toast('Gelöscht'); }
+}
+async function saveHausbauMeta(){
+  settings.extra = settings.extra || {};
+  settings.extra.bauende = $('hb-ende').value || null;
+  settings.extra.hausbauAusgegeben = num($('hb-uebertrag').value);
+  if (await persistExtra()) { renderHausbau(); renderDashboard(); toast('Gespeichert ✓'); }
+}
+
+/* ---- Prognose-Simulation Monat für Monat ---- */
+function activeInMonth(a, date) {
+  if (a.ab) { const ab = new Date(a.ab); if (ab > date) return false; }
+  if (a.bis) { const bis = new Date(a.bis); if (bis < date) return false; }
+  return true;
+}
+function fixAusgabenBis(monate) {
+  let sum = 0;
+  const today = new Date(); today.setDate(1); today.setHours(0,0,0,0);
+  for (let m=0; m<monate; m++) {
+    const d = new Date(today); d.setMonth(d.getMonth()+m+1);  // Monatsende-Sicht
+    sum += ausgabenList().filter(a => activeInMonth(a, d)).reduce((s,a)=>s+ausgabeProMonat(a),0);
+  }
+  return sum;
+}
+function kreditRatenBis(monate) {
+  let sum = 0;
+  const states = krediteList().map(k => { const c = computeKredit(k); return { balance:c.restschuld, rate:c.rate, r:(Number(k.zinssatz)||0)/100/12 }; });
+  for (let m=0; m<monate; m++) {
+    for (const s of states) {
+      if (s.balance > 0.005 && s.rate > 0) {
+        const zins = s.balance * s.r;
+        let tilg = s.rate - zins;
+        if (tilg <= 0) continue;
+        if (tilg > s.balance) tilg = s.balance;
+        const pay = zins + tilg;
+        s.balance -= tilg;
+        sum += pay;
+      }
+    }
+  }
+  return sum;
+}
+function renderPrognose(){
+  const datStr = $('hb-prog-datum').value;
+  if (!datStr) { $('hb-prognose').style.display='none'; return; }
+  const ziel = new Date(datStr); ziel.setHours(0,0,0,0);
+  const now = new Date(); now.setDate(1); now.setHours(0,0,0,0);
+  const monate = (ziel.getFullYear()-now.getFullYear())*12 + (ziel.getMonth()-now.getMonth());
+  if (monate <= 0) { $('hb-prognose').style.display='block'; $('hb-prognose').innerHTML='<strong>⚠️ Das Datum muss in der Zukunft liegen.</strong>'; return; }
+
+  const basis = $('hb-prog-basis').value;
+  const kontenSumme = konten.reduce((s,k)=> s + (Number(k.bestand)||0), 0);
+  const wpSumme = wertpapiere.reduce((s,w)=> s + wpWert(w), 0);
+  const startCash = basis === 'liquide' ? (kontenSumme + wpSumme) : kontenSumme;
+  const einkommenMonat = haushaltNettoMonat();
+  const einkommen = einkommenMonat * monate;
+  const fix = fixAusgabenBis(monate);
+  const kred = kreditRatenBis(monate);
+  const hausbauOffen = gewerkeOffenSum();
+  const prognose = startCash + einkommen - fix - kred - hausbauOffen;
+  const farbe = prognose >= 0 ? 'var(--success)' : 'var(--danger)';
+
+  $('hb-prognose').style.display='block';
+  $('hb-prognose').style.background = prognose>=0 ? '#ecfdf5' : '#fef2f2';
+  $('hb-prognose').style.borderColor = prognose>=0 ? '#a7f3d0' : '#fecaca';
+  $('hb-prognose').style.color = prognose>=0 ? '#065f46' : '#991b1b';
+  $('hb-prognose').innerHTML = `
+    <div style="font-size:1.4rem;font-weight:700;margin-bottom:10px">Voraussichtl. ${basis==='liquide'?'liquides Vermögen':'Barvermögen'} am ${ziel.toLocaleDateString('de-DE')}: <span style="color:${farbe}">${eur(prognose)}</span></div>
+    <div style="display:grid;grid-template-columns:1fr auto;gap:6px 16px;font-size:0.92rem">
+      <span>Aktuell ${basis==='liquide'?'liquide':'bar'} verfügbar</span><span style="text-align:right">${eur(startCash)}</span>
+      <span>+ Haushaltseinkommen (${monate} Monate × ${eur(einkommenMonat)})</span><span style="text-align:right;color:var(--success)">+ ${eur(einkommen)}</span>
+      <span>− Fixe Ausgaben über ${monate} Monate (Enddaten berücksichtigt)</span><span style="text-align:right;color:var(--danger)">− ${eur(fix)}</span>
+      <span>− Kreditraten über ${monate} Monate</span><span style="text-align:right;color:var(--danger)">− ${eur(kred)}</span>
+      <span>− Noch offene Hausbau-Ausgaben (alle Gewerke)</span><span style="text-align:right;color:var(--danger)">− ${eur(hausbauOffen)}</span>
+      <span style="font-weight:700;border-top:1px solid currentColor;padding-top:6px">= Voraussichtlich verfügbar</span><span style="text-align:right;font-weight:700;border-top:1px solid currentColor;padding-top:6px">${eur(prognose)}</span>
+    </div>`;
 }
 
 /* ============================================================

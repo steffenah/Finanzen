@@ -2,70 +2,83 @@
   FINANZEN & VERMÖGEN  –  Anleitung
 ==========================================================
 
-WAS KANN DIE APP?
-- Konten & Bankbestände eintragen (mit Zins-Vorschlag je Bank)
-- Aktien & ETFs eintragen, Kurse automatisch abrufen
-- Dividenden erfassen → Prognose aus 10-Jahres-Durchschnitt
-- Deutsche Steuer (Abgeltungsteuer + Soli + Kirchensteuer) schätzen
-- Bei jedem Monatswechsel: Erinnerung, Werte zu prüfen
-- Synchronisiert zwischen Laptop und PC (über Supabase + GitHub)
-
+LIVE-APP: https://steffenah.github.io/Finanzen/
 
 ==========================================================
-  EINRICHTUNG – einmalig
+  ERSTEINRICHTUNG (einmalig, ~5 Minuten)
 ==========================================================
 
-SCHRITT 1 – Datenbank (Supabase, kostenlos)
+SCHRITT 1 — Datenbank anlegen (Supabase, kostenlos)
+---------------------------------------------------
+1. Auf supabase.com kostenlos registrieren → "New Project".
+2. Im Projekt links auf "SQL Editor" → "+ New query".
+3. In der App auf dem Einrichtungsbildschirm den Knopf
+   "SQL kopieren" → Code in Supabase einfügen → "Run".
+   ("Success. No rows returned" = alles gut)
+4. Im Supabase-Projekt links unter "Project Settings":
+   - "General"  → "Project ID" kopieren.
+   - "API"      → "anon public" Key kopieren.
+5. Beides in der App eintragen → "Verbinden".
+6. Beim ersten Login ein eigenes Passwort festlegen (merken!).
+
+SCHRITT 2 — Aktien-Kurse abrufen (optional)
 -------------------------------------------
-1. Auf supabase.com registrieren → "New Project".
-2. Im Projekt links: "SQL Editor" → den Code aus der App
-   (Einrichtungsbildschirm, Knopf "SQL kopieren") einfügen → "Run".
-3. Links "Project Settings":
-   - unter "General": die "Project ID" kopieren.
-   - unter "API" / "API Keys": den "anon public key" kopieren.
-4. App (index.html) öffnen → Project ID und Key eintragen → "Verbinden".
-   (Die App baut die Adresse https://[ID].supabase.co automatisch.)
-5. Beim ersten Anmelden ein Passwort festlegen (merken!).
-
-SCHRITT 2 – Kurs-/Dividenden-Abruf (optional, kostenlos)
---------------------------------------------------------
-1. Auf alphavantage.co/support/#api-key einen gratis API-Key holen.
-2. In der App unter "Einstellungen" eintragen → speichern.
-   (Hinweis: ~25 Abrufe/Tag gratis – für monatliche Prüfung genug.)
-   Tipp Ticker-Symbole: US-Börse z.B. AAPL, Xetra z.B. SAP.DE
-
-SCHRITT 3 – Geräte-Sync über GitHub (optional, empfohlen)
----------------------------------------------------------
-HINWEIS: Deine FINANZDATEN liegen in Supabase, NICHT auf GitHub.
-GitHub speichert nur den Programmcode, damit beide Geräte die
-gleiche App-Version haben.
-
-A) Auf github.com ein LEERES Repo anlegen (Name z.B. "Finanzen",
-   ohne README/Lizenz).
-B) Die Repo-URL oben in "setup-github.ps1" eintragen.
-C) Rechtsklick auf "setup-github.ps1" → "Mit PowerShell ausführen".
-
-Auf dem ZWEITEN Gerät (PC zuhause):
-   git clone <deine-Repo-URL> "Finanzen"
-Danach dort dieselbe Supabase-URL + Key in der App eintragen –
-deine Daten sind sofort da.
+1. Gratis-API-Key holen: alphavantage.co/support/#api-key
+2. In der App: "Einstellungen" → Alpha-Vantage-Key eintragen.
+   (~25 Abrufe/Tag kostenlos — für die monatliche Prüfung reicht das.)
+   Ticker-Symbol-Beispiele:  US-Börse → AAPL,  Xetra → SAP.DE
 
 
 ==========================================================
-  TÄGLICHE NUTZUNG
+  AUF WEITERE GERÄTE ÜBERTRAGEN (Handy / 2. PC)
 ==========================================================
-- App: index.html im Browser öffnen (oder als App installieren:
-  im Browser-Menü "Zu Startbildschirm/Apps hinzufügen").
-- Code aktuell halten: "start.ps1" doppelklicken
-  (holt Updates beim Start, lädt Änderungen automatisch hoch).
-- Immer nur auf EINEM Gerät gleichzeitig arbeiten und start.ps1
-  durchlaufen lassen, bis "Fertig" erscheint.
+
+Einfacher Weg:
+  Einstellungen → "Auf weiteres Gerät übertragen" →
+  "Setup-Link erzeugen" → Link kopieren ODER QR scannen.
+  Auf dem neuen Gerät öffnen → fertig, nur noch Passwort eingeben.
+
+Als App installieren:
+  - iPhone (Safari):  Teilen → "Zum Home-Bildschirm"
+  - Android (Chrome): Menü → "App installieren"
+  - Oder den 📲-Knopf unten rechts in der App nutzen.
+
+
+==========================================================
+  CODE-UPDATES (für Entwickler-Modus)
+==========================================================
+
+"start.ps1" doppelklicken:
+  - holt aktuelle Code-Version von GitHub (pull)
+  - lädt eigene Änderungen automatisch hoch (push)
+
+Wichtig: Immer nur auf EINEM Gerät zur gleichen Zeit Code ändern
+und start.ps1 zu Ende laufen lassen, bevor du auf das andere Gerät
+wechselst.
+
+Hinweis: Diese Updates betreffen NUR den App-Code. Deine Finanzdaten
+liegen IMMER in Supabase und sind auf allen Geräten automatisch
+synchron, sobald die Verbindung steht.
+
+
+==========================================================
+  BACKUP & WIEDERHERSTELLEN
+==========================================================
+
+Einstellungen → "Backup herunterladen" → speichert alle Daten
+als JSON-Datei auf deinem Rechner.
+
+"Backup wiederherstellen" → liest eine JSON-Datei zurück
+(überschreibt die Cloud-Daten — bitte vorsichtig).
+
+Empfehlung: alle 1–2 Monate ein Backup ziehen.
 
 
 ==========================================================
   WICHTIGER HINWEIS
 ==========================================================
-Die Steuerberechnung ist eine unverbindliche Schätzung
-(keine Steuerberatung). Die Vorabpauschale auf thesaurierende
-Fonds ist nicht enthalten. Bank-Zinssätze sind Vorschläge und
-sollten bei Bedarf angepasst werden.
+Die Steuer- und Netto-Berechnungen sind unverbindliche Schätzungen
+(keine Steuerberatung). Die Vorabpauschale auf thesaurierende Fonds
+ist nicht enthalten. Bank-Zinssätze sind Vorschläge und sollten bei
+Bedarf angepasst werden. Die Anlage-KAP-Werte vor Steuererklärung
+bitte mit den Jahressteuerbescheinigungen der Banken abgleichen.

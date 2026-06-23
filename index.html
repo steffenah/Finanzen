@@ -131,6 +131,26 @@
   .spinner { width:38px; height:38px; border:4px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.7s linear infinite; }
   @keyframes spin { to { transform:rotate(360deg); } }
 
+  /* Vermögens-Slider */
+  .vslider-row { display:flex; align-items:center; gap:14px; margin:14px 0 18px; flex-wrap:wrap; }
+  .vslider { flex:1; min-width:200px; height:6px; }
+  .vslider-label { min-width:160px; font-weight:600; font-size:1rem; }
+  .vslider-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+  .vmini { padding:11px 13px; border-radius:10px; background:var(--bg); border:1px solid var(--border); }
+  .vmini .lab { font-size:0.78rem; color:var(--muted); margin-bottom:3px; }
+  .vmini .val { font-size:1.05rem; font-weight:700; }
+  .vmini.accent { background:linear-gradient(135deg,#047857,#10b981); color:white; border:none; }
+  .vmini.accent .lab { color:rgba(255,255,255,0.85); }
+
+  /* Pie + Legende */
+  .pie-row { display:grid; grid-template-columns:1fr; gap:18px; align-items:center; }
+  @media (min-width:760px) { .pie-row { grid-template-columns:280px 1fr; } }
+  .pie-legend { display:flex; flex-direction:column; gap:4px; max-height:340px; overflow-y:auto; }
+  .pie-leg-item { display:flex; align-items:center; gap:8px; font-size:0.85rem; padding:3px 0; }
+  .pie-leg-dot { width:11px; height:11px; border-radius:3px; flex-shrink:0; }
+  .pie-leg-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pie-leg-val { color:var(--muted); font-variant-numeric:tabular-nums; }
+
   /* PIN-PAD */
   .pin-display { font-size:1.8rem; letter-spacing:0.6em; padding:14px 0; text-align:center; color:var(--text); font-family:monospace; user-select:none; min-height:60px; }
   .pin-pad { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:8px 0 18px; }
@@ -255,8 +275,20 @@
       </div>
       <div class="stats-grid" id="dash-stats"></div>
       <div class="card">
+        <h2 style="margin-bottom:6px">📅 Vermögens-Prognose nächste 1,5 Jahre</h2>
+        <p class="hint" style="margin-bottom:8px">Schieberegler bewegen — siehst sofort, wie sich Konten, Wertpapiere und Schulden entwickeln.</p>
+        <div class="vslider-row">
+          <input type="range" id="dash-slider" class="vslider" min="0" max="18" value="6" step="1" oninput="renderSliderProgress()">
+          <span class="vslider-label" id="dash-slider-label"></span>
+        </div>
+        <div class="vslider-grid" id="dash-slider-grid"></div>
+      </div>
+      <div class="card">
         <h2 style="margin-bottom:14px">Vermögensaufteilung</h2>
-        <div id="dash-breakdown"></div>
+        <div class="pie-row">
+          <div id="dash-pie"></div>
+          <div id="dash-breakdown"></div>
+        </div>
       </div>
     </section>
 
@@ -980,6 +1012,115 @@ function closeSidebar(){ $('sidebar').classList.remove('open'); $('overlay').cla
 /* ============================================================
    Dashboard
    ============================================================ */
+/* ============================================================
+   Vermögens-Slider (0..18 Monate) + Pie-Chart
+   ============================================================ */
+function simulateSchulden(monate) {
+  const states = krediteList().map(k => {
+    const c = computeKredit(k);
+    return { balance:c.restschuld, rate:c.rate, r:(Number(k.zinssatz)||0)/100/12, startsInMonat: c.monateBisStart };
+  });
+  for (let m=0; m<monate; m++) {
+    for (const s of states) {
+      if (m < s.startsInMonat) continue;
+      if (s.balance > 0.005 && s.rate > 0) {
+        const zins = s.balance * s.r;
+        let tilg = s.rate - zins;
+        if (tilg <= 0) continue;
+        if (tilg > s.balance) tilg = s.balance;
+        s.balance -= tilg;
+      }
+    }
+  }
+  return states.reduce((s,x) => s + Math.max(0, x.balance), 0);
+}
+function prognoseAtMonat(m) {
+  const kontenJetzt = konten.reduce((s,k)=> s + (Number(k.bestand)||0), 0);
+  const wpJetzt = wertpapiere.reduce((s,w)=> s + wpWert(w), 0);
+  const hausbauJetzt = hausbauAusgegebenTotal();
+  const hausbauOffen = gewerkeOffenSum();
+  // Hausbau-Zahlungen linear bis Bauende oder über 12 Monate verteilen
+  const bauende = (settings.extra||{}).bauende;
+  let monateBisBauende = 12;
+  if (bauende) {
+    const now = new Date(); now.setDate(1);
+    const ende = new Date(bauende);
+    monateBisBauende = Math.max(1, (ende.getFullYear()-now.getFullYear())*12 + (ende.getMonth()-now.getMonth()));
+  }
+  const hausbauProMonat = monateBisBauende > 0 ? hausbauOffen / monateBisBauende : 0;
+  const hausbauPay = Math.min(hausbauOffen, hausbauProMonat * m);
+  // Geldflüsse
+  const einkommen = haushaltNettoMonat() * m;
+  const fix = fixAusgabenBis(m);
+  const kredit = kreditRatenBis(m);
+  const spar = sparplaeneBis(m);
+  // Komponenten
+  const kontenM = kontenJetzt + einkommen - fix - kredit - spar - hausbauPay;
+  const wpM = wpJetzt + spar;
+  const hausbauM = hausbauJetzt + hausbauPay;
+  const schuldenM = simulateSchulden(m);
+  const vermoegenM = kontenM + wpM + hausbauM;
+  const realM = vermoegenM - schuldenM;
+  return { konten:kontenM, wp:wpM, hausbau:hausbauM, schulden:schuldenM, vermoegen:vermoegenM, real:realM };
+}
+function renderSliderProgress() {
+  const slider = $('dash-slider');
+  if (!slider) return;
+  const m = parseInt(slider.value)||0;
+  const d = new Date(); d.setMonth(d.getMonth()+m); d.setDate(1);
+  const datumStr = m===0 ? 'heute' : d.toLocaleDateString('de-DE',{month:'long',year:'numeric'});
+  $('dash-slider-label').textContent = `In ${m} Mon. — ${datumStr}`;
+  const p = prognoseAtMonat(m);
+  const grid = $('dash-slider-grid');
+  grid.innerHTML = `
+    <div class="vmini accent"><div class="lab">⚖️ Reales Vermögen</div><div class="val">${eur(p.real)}</div></div>
+    <div class="vmini"><div class="lab">💰 Vermögen gesamt</div><div class="val">${eur(p.vermoegen)}</div></div>
+    <div class="vmini"><div class="lab">🏦 Konten</div><div class="val ${p.konten<0?'neg':''}">${eur(p.konten)}</div></div>
+    <div class="vmini"><div class="lab">📈 Wertpapiere</div><div class="val">${eur(p.wp)}</div></div>
+    <div class="vmini"><div class="lab">🏗️ Hausbau</div><div class="val">${eur(p.hausbau)}</div></div>
+    <div class="vmini"><div class="lab">💳 Schulden</div><div class="val neg">−${eur(p.schulden)}</div></div>`;
+}
+
+/* Pie-Chart: ein Slice pro Konto, pro Wertpapier und ein Slice „Hausbau" */
+function colorFor(group, idx, total) {
+  // group: 0=Hausbau (orange), 1=Konto (grün), 2=WP (blau/violett)
+  const ranges = [[18,38],[130,180],[200,290]];
+  const [hMin, hMax] = ranges[group] || [0,360];
+  const hue = total <= 1 ? (hMin+hMax)/2 : hMin + (hMax-hMin) * idx/Math.max(1,total-1);
+  const sat = group===0 ? 78 : group===1 ? 55 : 60;
+  const lig = 50 - (idx % 3) * 6;
+  return `hsl(${hue.toFixed(0)} ${sat}% ${lig}%)`;
+}
+function renderPie(items) {
+  if (!items.length) { $('dash-pie').innerHTML = ''; return; }
+  const total = items.reduce((s,i)=>s+i.wert,0);
+  if (total <= 0) { $('dash-pie').innerHTML = ''; return; }
+  const cx=140, cy=140, r=125;
+  let acc = 0;
+  const arcs = items.map(it => {
+    const a0 = acc, frac = it.wert/total; acc += frac;
+    const a1 = acc;
+    return { item:it, a0:a0*Math.PI*2, a1:a1*Math.PI*2 };
+  });
+  const fullCircle = items.length === 1;
+  const path = (a) => {
+    if (fullCircle) {
+      return `M${cx},${cy-r} A${r},${r} 0 1,1 ${cx-0.01},${cy-r} Z`;
+    }
+    const x0 = cx + r*Math.sin(a.a0), y0 = cy - r*Math.cos(a.a0);
+    const x1 = cx + r*Math.sin(a.a1), y1 = cy - r*Math.cos(a.a1);
+    const large = (a.a1 - a.a0) > Math.PI ? 1 : 0;
+    return `M${cx},${cy} L${x0.toFixed(2)},${y0.toFixed(2)} A${r},${r} 0 ${large},1 ${x1.toFixed(2)},${y1.toFixed(2)} Z`;
+  };
+  $('dash-pie').innerHTML = `
+    <svg viewBox="0 0 280 280" style="width:100%;max-width:280px;height:auto;display:block;margin:0 auto">
+      ${arcs.map(a => `<path d="${path(a)}" fill="${a.item.color}" stroke="white" stroke-width="1.5"/>`).join('')}
+      <circle cx="${cx}" cy="${cy}" r="50" fill="white"/>
+      <text x="${cx}" y="${cy-4}" text-anchor="middle" font-size="12" fill="#64748b">Vermögen</text>
+      <text x="${cx}" y="${cy+14}" text-anchor="middle" font-size="14" font-weight="700" fill="#0f172a">${total>=1000?Math.round(total/1000)+'k':Math.round(total)} €</text>
+    </svg>`;
+}
+
 function renderDashboard() {
   const kontenSumme = konten.reduce((s,k)=> s + (Number(k.bestand)||0), 0);
   const wpSumme = wertpapiere.reduce((s,w)=> s + wpWert(w), 0);
@@ -1012,22 +1153,36 @@ function renderDashboard() {
     ${haushaltNetto>0?`<div class="stat"><div class="label">📊 Überschuss / Monat</div><div class="value ${ueberschuss<0?'neg':'pos'}">${eur(ueberschuss)}</div><div class="sub">Einkommen − Fixkosten − Kreditraten</div></div>`:''}
     ${monatKosten>0?`<div class="stat"><div class="label">🛡️ Notgroschen reicht für</div><div class="value ${notgroschenMon<3?'neg':notgroschenMon<6?'':'pos'}">${notgroschenMon.toFixed(1)} Monate</div><div class="sub">nach Hausbau (${eur(notgroschenBasis)}) ÷ Fix + Kredit</div></div>`:''}`;
 
-  const rows = [
-    ...konten.map(k=>({ label:k.name+(k.bank&&k.bank!=='— manuell —'?' · '+k.bank:''), wert:Number(k.bestand)||0, typ:'Konto' })),
-    ...wertpapiere.map(w=>({ label:w.name, wert:wpWert(w), typ:w.typ==='etf'?'ETF':'Aktie' })),
-    ...(hausbau>0?[{ label:'Für Hausbau ausgegeben', wert:hausbau, typ:'Hausbau' }]:[]),
-  ].sort((a,b)=>b.wert-a.wert);
-  if (!rows.length) { $('dash-breakdown').innerHTML = emptyState('Noch keine Daten','Lege Konten und Wertpapiere an.'); return; }
-  $('dash-breakdown').innerHTML = rows.map(r=>{
-    const p = gesamt>0 ? (r.wert/gesamt*100) : 0;
-    return `<div style="margin-bottom:11px">
-      <div style="display:flex;justify-content:space-between;font-size:0.88rem;margin-bottom:4px">
-        <span>${esc(r.label)} <span class="badge ${r.typ==='ETF'?'badge-etf':r.typ==='Aktie'?'badge-aktie':''}" style="margin-left:4px">${r.typ}</span></span>
-        <span style="font-weight:600">${eur(r.wert)} · ${p.toFixed(1)}%</span>
-      </div>
-      <div style="height:8px;background:var(--bg);border-radius:99px;overflow:hidden"><div style="height:100%;width:${p}%;background:var(--accent)"></div></div>
-    </div>`;
-  }).join('');
+  // Items mit Farben pro Kategorie (Hausbau orange, Konten grün, Wertpapiere blau/violett)
+  const items = [];
+  if (hausbau > 0) items.push({ label:'Für Hausbau ausgegeben', wert:hausbau, typ:'Hausbau', color:colorFor(0,0,1) });
+  const kontenAktiv = konten.filter(k=>(Number(k.bestand)||0) > 0);
+  kontenAktiv.forEach((k,i) => items.push({
+    label: k.name + (k.bank && k.bank!=='— manuell —' ? ' · '+k.bank : ''),
+    wert: Number(k.bestand)||0, typ:'Konto', color: colorFor(1, i, kontenAktiv.length)
+  }));
+  const wpAktiv = wertpapiere.filter(w=>wpWert(w) > 0);
+  wpAktiv.forEach((w,i) => items.push({
+    label: w.name, wert: wpWert(w),
+    typ: w.typ==='etf'?'ETF':'Aktie', color: colorFor(2, i, wpAktiv.length)
+  }));
+  items.sort((a,b)=>b.wert-a.wert);
+  if (!items.length) {
+    $('dash-breakdown').innerHTML = emptyState('Noch keine Daten','Lege Konten und Wertpapiere an.');
+    $('dash-pie').innerHTML = '';
+  } else {
+    renderPie(items);
+    $('dash-breakdown').innerHTML = `<div class="pie-legend">${items.map(r=>{
+      const p = gesamt>0 ? (r.wert/gesamt*100) : 0;
+      return `<div class="pie-leg-item">
+        <span class="pie-leg-dot" style="background:${r.color}"></span>
+        <span class="pie-leg-name">${esc(r.label)}</span>
+        <span class="pie-leg-val">${eur(r.wert)} · ${p.toFixed(1)}%</span>
+      </div>`;
+    }).join('')}</div>`;
+  }
+  // Slider 1,5-Jahres-Prognose aktualisieren
+  renderSliderProgress();
 }
 function emptyState(t,s){ return `<div class="empty"><span class="ico">📭</span><div style="font-weight:600">${t}</div><div style="font-size:0.85rem">${s}</div></div>`; }
 function esc(s){ return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }

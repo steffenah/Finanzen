@@ -131,6 +131,14 @@
   .spinner { width:38px; height:38px; border:4px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.7s linear infinite; }
   @keyframes spin { to { transform:rotate(360deg); } }
 
+  /* PIN-PAD */
+  .pin-display { font-size:1.8rem; letter-spacing:0.6em; padding:14px 0; text-align:center; color:var(--text); font-family:monospace; user-select:none; min-height:60px; }
+  .pin-pad { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:8px 0 18px; }
+  .pin-key { padding:16px 0; font-size:1.3rem; font-weight:600; background:#f1f5f9; border:1px solid var(--border); border-radius:10px; cursor:pointer; font-family:inherit; }
+  .pin-key:hover:not(:disabled) { background:#e2e8f0; }
+  .pin-key:active { transform:scale(0.96); }
+  .pin-key-action { background:white; font-size:1rem; }
+
   @media (max-width:768px) {
     .sidebar { transform:translateX(-100%); transition:transform 0.28s ease; }
     .sidebar.open { transform:translateX(0); box-shadow:4px 0 24px rgba(0,0,0,0.3); }
@@ -156,10 +164,34 @@
     <div class="login-title">Finanzen &amp; Vermögen</div>
     <div class="login-sub" id="login-sub">Bitte Passwort eingeben</div>
     <div class="login-error" id="login-error">❌ Falsches Passwort</div>
-    <div class="form-group" style="text-align:left">
-      <input id="login-pw" type="password" placeholder="Passwort…" onkeydown="if(event.key==='Enter')doLogin()">
+    <!-- PIN-Modus -->
+    <div id="login-pin-mode" style="display:none">
+      <div class="pin-display" id="pin-display">····</div>
+      <div class="pin-pad">
+        ${'1234567890'.split('').map(d=>'').join('')}
+        <button type="button" class="pin-key" onclick="pinPress('1')">1</button>
+        <button type="button" class="pin-key" onclick="pinPress('2')">2</button>
+        <button type="button" class="pin-key" onclick="pinPress('3')">3</button>
+        <button type="button" class="pin-key" onclick="pinPress('4')">4</button>
+        <button type="button" class="pin-key" onclick="pinPress('5')">5</button>
+        <button type="button" class="pin-key" onclick="pinPress('6')">6</button>
+        <button type="button" class="pin-key" onclick="pinPress('7')">7</button>
+        <button type="button" class="pin-key" onclick="pinPress('8')">8</button>
+        <button type="button" class="pin-key" onclick="pinPress('9')">9</button>
+        <button type="button" class="pin-key pin-key-action" onclick="pinClear()">✕</button>
+        <button type="button" class="pin-key" onclick="pinPress('0')">0</button>
+        <button type="button" class="pin-key pin-key-action" onclick="pinBackspace()">⌫</button>
+      </div>
+      <button class="btn btn-ghost" style="width:100%;justify-content:center" onclick="switchToPasswordLogin()">Stattdessen Passwort verwenden</button>
     </div>
-    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;font-size:1rem" onclick="doLogin()">🔓 Anmelden</button>
+    <!-- Passwort-Modus -->
+    <div id="login-pw-mode">
+      <div class="form-group" style="text-align:left">
+        <input id="login-pw" type="password" placeholder="Passwort…" onkeydown="if(event.key==='Enter')doLogin()">
+      </div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;font-size:1rem" onclick="doLogin()">🔓 Anmelden</button>
+      <button class="btn btn-ghost" id="btn-switch-pin" style="width:100%;justify-content:center;margin-top:8px;display:none" onclick="switchToPinLogin()">🔢 PIN verwenden</button>
+    </div>
   </div>
 </div>
 
@@ -199,6 +231,7 @@
       <button class="nav-link" data-view="wertpapiere" onclick="showView('wertpapiere')">📈 Aktien &amp; ETFs</button>
       <button class="nav-link" data-view="dividenden" onclick="showView('dividenden')">💵 Dividenden</button>
       <button class="nav-link" data-view="steuer" onclick="showView('steuer')">🧾 Steuer</button>
+      <button class="nav-link" data-view="kap" onclick="showView('kap')">📑 Anlage KAP</button>
       <button class="nav-link" data-view="verlauf" onclick="showView('verlauf')">📊 Verlauf</button>
       <button class="nav-link" data-view="einstellungen" onclick="showView('einstellungen')">⚙️ Einstellungen</button>
     </nav>
@@ -357,6 +390,15 @@
       <div class="card"><div id="steuer-detail"></div></div>
     </section>
 
+    <!-- ANLAGE KAP -->
+    <section class="view" id="view-kap">
+      <div class="view-head"><h1>📑 Anlage KAP — Vorausfüllhilfe</h1>
+        <select id="kap-jahr" onchange="renderKap()" style="width:auto;padding:8px 12px"></select>
+      </div>
+      <div class="warn-box">⚠️ Schätzung anhand deiner App-Daten (Zinssätze × Bestände, erfasste Dividenden). Vor der Steuererklärung mit der <strong>Jahressteuerbescheinigung deiner Bank</strong> abgleichen!</div>
+      <div id="kap-content"></div>
+    </section>
+
     <!-- VERLAUF -->
     <section class="view" id="view-verlauf">
       <div class="view-head"><h1>📊 Vermögens-Verlauf</h1>
@@ -396,6 +438,21 @@
         <div class="form-group"><label>Alpha-Vantage API-Schlüssel</label><input id="set-avkey" placeholder="z.B. ABCD1234…"></div>
       </div>
       <button class="btn btn-primary" onclick="saveSettings()">💾 Einstellungen speichern</button>
+      <div class="card" style="margin-top:24px">
+        <h3 style="margin-bottom:8px">🔢 PIN-Schnellzugriff (nur auf diesem Gerät)</h3>
+        <p class="hint" style="margin-bottom:12px" id="pin-status">Kein PIN gesetzt — du musst dich mit Passwort anmelden.</p>
+        <div class="row">
+          <div class="form-group"><label>Neue 4-stellige PIN</label><input id="set-pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="z.B. 1234"></div>
+          <div class="form-group"><label>&nbsp;</label>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-primary btn-sm" onclick="setLocalPin()">💾 PIN speichern</button>
+              <button class="btn btn-ghost btn-sm" onclick="clearLocalPin()" id="btn-pin-clear" style="display:none">🗑️ Entfernen</button>
+            </div>
+          </div>
+        </div>
+        <p class="hint">Die PIN wird nur lokal in diesem Browser gespeichert (nicht in der Cloud). Auf jedem Gerät kannst du eine eigene PIN setzen.</p>
+      </div>
+
       <div class="card" style="margin-top:24px">
         <h3 style="margin-bottom:8px">💾 Datensicherung</h3>
         <p class="hint" style="margin-bottom:12px">Alle Daten (Konten, Wertpapiere, Einstellungen, Hausbau, Kredite, Verlauf) als JSON-Datei sichern. Empfehlung: ab und zu eine Sicherung herunterladen — falls Supabase mal Probleme macht oder du den Account neu aufsetzt.</p>
@@ -556,6 +613,12 @@ Santander Bank | 100147.21 | 3.3"></textarea>
       <div class="form-group"><label>Anzahl *</label><input id="w-anzahl" type="number" step="0.0001" placeholder="0"></div>
       <div class="form-group"><label>Kaufkurs (€)</label><input id="w-kaufkurs" type="number" step="0.01" placeholder="0,00"></div>
       <div class="form-group"><label>Akt. Kurs (€)</label><input id="w-kurs" type="number" step="0.01" placeholder="0,00"></div>
+    </div>
+    <h3 style="margin:14px 0 6px;font-size:0.95rem;color:var(--muted)">💸 Sparplan (optional)</h3>
+    <div class="row">
+      <div class="form-group"><label>Monatlich (€)</label><input id="w-sparrate" type="number" step="0.01" placeholder="0,00">
+        <div class="hint">Automatisch in Barvermögens-Prognose berücksichtigt.</div></div>
+      <div class="form-group"><label>Sparplan läuft bis (optional)</label><input id="w-sparbis" type="date"></div>
     </div>
     <div class="form-group"><label>Notiz</label><input id="w-notiz" placeholder="optional"></div>
     <div class="form-error" id="w-error"></div>
@@ -768,7 +831,12 @@ async function loadSettingsThenAuth() {
   // Session
   if (sessionStorage.getItem('fin_auth') === '1') { enterApp(); return; }
   showScreen('login');
-  $('login-pw').focus();
+  if (getLocalPin() && settings.passwort) {
+    switchToPinLogin();
+    $('btn-switch-pin').style.display = 'inline-flex';
+  } else {
+    $('login-pw').focus();
+  }
 }
 
 /* ============================================================
@@ -816,6 +884,54 @@ async function doLogin() {
     $('login-pw').value='';
   }
 }
+
+/* ---- PIN-Schnellzugriff (nur lokal pro Gerät) ---- */
+let pinBuffer = '', pinFails = 0;
+function getLocalPin(){ return localStorage.getItem('fin_pin') || ''; }
+function switchToPinLogin(){ $('login-pw-mode').style.display='none'; $('login-pin-mode').style.display='block'; $('login-sub').textContent='PIN eingeben'; pinClear(); }
+function switchToPasswordLogin(){ $('login-pin-mode').style.display='none'; $('login-pw-mode').style.display='block'; $('login-sub').textContent='Bitte Passwort eingeben'; setTimeout(()=>$('login-pw').focus(),50); }
+function pinPress(d){
+  if (pinBuffer.length >= 4) return;
+  pinBuffer += d;
+  drawPin();
+  if (pinBuffer.length === 4) setTimeout(tryPin, 120);
+}
+function pinBackspace(){ pinBuffer = pinBuffer.slice(0,-1); drawPin(); }
+function pinClear(){ pinBuffer=''; drawPin(); $('login-error').style.display='none'; }
+function drawPin(){ $('pin-display').textContent = pinBuffer.padEnd(4,'·'); }
+function tryPin(){
+  const pin = getLocalPin();
+  if (!pin) { switchToPasswordLogin(); return; }
+  if (pinBuffer === pin) {
+    pinFails = 0; pinClear();
+    $('login-error').style.display='none';
+    sessionStorage.setItem('fin_auth','1');
+    enterApp();
+  } else {
+    pinFails++; pinClear();
+    if (pinFails >= 3) {
+      localStorage.removeItem('fin_pin');
+      $('login-error').textContent = '❌ 3× falsch — PIN entfernt, bitte Passwort verwenden.';
+      $('login-error').style.display='block';
+      switchToPasswordLogin();
+    } else {
+      $('login-error').textContent = '❌ Falsche PIN (' + (3-pinFails) + ' Versuche übrig)';
+      $('login-error').style.display='block';
+    }
+  }
+}
+function setLocalPin(){
+  const v = ($('set-pin').value||'').trim();
+  if (!/^\d{4}$/.test(v)) { toast('PIN muss aus 4 Ziffern bestehen'); return; }
+  localStorage.setItem('fin_pin', v);
+  $('set-pin').value=''; updatePinStatus(); toast('PIN gespeichert ✓');
+}
+function clearLocalPin(){ if (!confirm('PIN von diesem Gerät entfernen?')) return; localStorage.removeItem('fin_pin'); updatePinStatus(); toast('PIN entfernt'); }
+function updatePinStatus(){
+  const pin = getLocalPin();
+  $('pin-status').textContent = pin ? `✅ PIN ist gesetzt — beim nächsten Login zeigt die App das PIN-Pad.` : 'Kein PIN gesetzt — du musst dich mit Passwort anmelden.';
+  $('btn-pin-clear').style.display = pin ? 'inline-flex' : 'none';
+}
 function logout() {
   if (!confirm('Abmelden?')) return;
   sessionStorage.removeItem('fin_auth');
@@ -845,7 +961,7 @@ async function reloadAll() {
   konten = k.data || [];
   wertpapiere = w.data || [];
   dividenden = d.data || [];
-  renderDashboard(); renderKonten(); renderWp(); renderDividenden(); renderSteuer(); renderKredite(); renderAusgaben(); renderHausbau(); renderVerlauf();
+  renderDashboard(); renderKonten(); renderWp(); renderDividenden(); renderSteuer(); renderKredite(); renderAusgaben(); renderHausbau(); renderVerlauf(); renderKap();
 }
 
 /* ============================================================
@@ -1012,8 +1128,11 @@ function openWpModal(id) {
     $('w-name').value=w.name||''; $('w-typ').value=w.typ||'aktie'; $('w-teilfrei').value=w.teilfreistellung??0;
     $('w-ticker').value=w.ticker||''; $('w-isin').value=w.isin||''; $('w-anzahl').value=w.anzahl??'';
     $('w-kaufkurs').value=w.kaufkurs??''; $('w-kurs').value=w.aktueller_kurs??''; $('w-notiz').value=w.notiz||'';
+    const sp = ((settings.extra||{}).sparplaene||{})[id] || {};
+    $('w-sparrate').value = sp.rate ?? '';
+    $('w-sparbis').value  = sp.bis || '';
   } else {
-    ['w-name','w-ticker','w-isin','w-anzahl','w-kaufkurs','w-kurs','w-notiz'].forEach(i=>$(i).value='');
+    ['w-name','w-ticker','w-isin','w-anzahl','w-kaufkurs','w-kurs','w-notiz','w-sparrate','w-sparbis'].forEach(i=>$(i).value='');
     $('w-typ').value='aktie'; $('w-teilfrei').value=0;
   }
   openModal('wp-modal');
@@ -1028,8 +1147,17 @@ async function saveWp() {
     aktueller_kurs: $('w-kurs').value!=='' ? num($('w-kurs').value) : null,
     notiz:$('w-notiz').value.trim()||null,
   };
-  if (editWpId) await sb.from('fin_wertpapiere').update(payload).eq('id',editWpId);
-  else await sb.from('fin_wertpapiere').insert(payload);
+  // Sparplan (in settings.extra.sparplaene, kein DB-Schema nötig)
+  const sparrate = num($('w-sparrate').value);
+  const sparBis  = $('w-sparbis').value || null;
+  let wpId;
+  if (editWpId) { await sb.from('fin_wertpapiere').update(payload).eq('id',editWpId); wpId = editWpId; }
+  else { const res = await sb.from('fin_wertpapiere').insert(payload).select().single(); wpId = res.data?.id; }
+  settings.extra = settings.extra || {};
+  settings.extra.sparplaene = settings.extra.sparplaene || {};
+  if (sparrate > 0) settings.extra.sparplaene[wpId] = { rate:sparrate, bis:sparBis };
+  else delete settings.extra.sparplaene[wpId];
+  await persistExtra();
   closeModal('wp-modal'); await reloadAll(); toast('Wertpapier gespeichert ✓');
 }
 async function deleteWp(id) {
@@ -1118,6 +1246,7 @@ function applySettingsToForm() {
   $('set-kirchensteuersatz').value = String(settings.kirchensteuersatz || 0.09);
   $('set-avkey').value = settings.av_api_key || '';
   toggleKistGroup();
+  updatePinStatus();
 }
 function toggleKistGroup(){ $('kist-satz-group').style.display = $('set-kirchensteuer').checked ? 'block':'none'; }
 $('set-kirchensteuer').addEventListener('change', toggleKistGroup);
@@ -1515,6 +1644,83 @@ async function deleteKredit(id) {
 }
 
 /* ============================================================
+   Sparpläne (an Wertpapieren) — Helfer für Prognose
+   ============================================================ */
+function sparplaenList() {
+  const sp = (settings.extra||{}).sparplaene || {};
+  return Object.entries(sp).map(([wpId,v]) => ({ wpId, rate:Number(v.rate)||0, bis:v.bis||null }))
+    .filter(s => s.rate>0 && wertpapiere.some(w=>w.id===s.wpId));
+}
+function sparplanAktiv(s, date) { if (!s.bis) return true; return new Date(s.bis) >= date; }
+function sparplaeneBis(monate) {
+  let sum = 0;
+  const today = new Date(); today.setDate(1); today.setHours(0,0,0,0);
+  const list = sparplaenList();
+  for (let m=0; m<monate; m++) {
+    const d = new Date(today); d.setMonth(d.getMonth()+m);
+    sum += list.filter(s => sparplanAktiv(s,d)).reduce((s2,s)=>s2+s.rate, 0);
+  }
+  return sum;
+}
+function sparplaeneAktuellMonat() { const today = new Date(); return sparplaenList().filter(s=>sparplanAktiv(s,today)).reduce((s,x)=>s+x.rate,0); }
+
+/* ============================================================
+   Anlage KAP — Vorausfüllhilfe für Steuererklärung
+   ============================================================ */
+function renderKap() {
+  const sel = $('kap-jahr');
+  const cur = new Date().getFullYear();
+  if (!sel.options.length) {
+    for (let y=cur; y>=cur-9; y--) sel.appendChild(new Option(y, y));
+    sel.value = cur-1;
+  }
+  const jahr = parseInt(sel.value) || (cur-1);
+  // Zinsen (Schätzung aus Bestand × Zinssatz, nur für laufendes Jahr sinnvoll)
+  const zinsRows = konten.filter(k=>(Number(k.zinssatz)||0) > 0).map(k => ({
+    name: (k.bank && k.bank!=='— manuell —') ? `${k.name} (${k.bank})` : k.name,
+    betrag: (Number(k.bestand)||0) * (Number(k.zinssatz)||0)/100
+  }));
+  const zinsSum = zinsRows.reduce((s,r)=>s+r.betrag,0);
+  // Dividenden des Jahres aus Erfassung
+  const divRows = wertpapiere.map(w => {
+    const eintraege = dividenden.filter(d => d.wertpapier_id===w.id && d.jahr===jahr);
+    const betrag = eintraege.reduce((s,d)=>s+(Number(d.betrag)||0),0);
+    const tf = Number(w.teilfreistellung)||0;
+    return { name:w.name, typ:w.typ==='etf'?'ETF':'Aktie', betrag, teilfrei:tf, steuerpflichtig: betrag*(1-tf/100) };
+  }).filter(r=>r.betrag>0);
+  const divSum = divRows.reduce((s,r)=>s+r.betrag,0);
+  const divSteuerpfl = divRows.reduce((s,r)=>s+r.steuerpflichtig,0);
+  const fb = settings.familienstand==='verheiratet' ? 2000 : 1000;
+  const summeKap = zinsSum + divSteuerpfl;
+  const istLaufendesJahr = jahr === cur;
+  $('kap-content').innerHTML = `
+    ${istLaufendesJahr?'<div class="info-box">🗓️ Du schaust dir das laufende Jahr an. Zinsen werden aus aktuellem Bestand × Zinssatz hochgerechnet.</div>':''}
+    <div class="card">
+      <h2 style="margin-bottom:14px">💰 Zinserträge aus Konten ${istLaufendesJahr?'<span class="hint" style="font-size:0.8rem;font-weight:normal">(geschätzt p.a.)</span>':''}</h2>
+      ${zinsRows.length ? `<div class="table-wrap"><table><thead><tr><th>Konto / Bank</th><th class="num">Betrag</th></tr></thead><tbody>
+        ${zinsRows.map(r=>`<tr><td>${esc(r.name)}</td><td class="num">${eur(r.betrag)}</td></tr>`).join('')}
+        <tr style="font-weight:700;border-top:2px solid var(--text)"><td>Summe Zinsen</td><td class="num">${eur(zinsSum)}</td></tr>
+      </tbody></table></div>` : '<p class="hint">Keine verzinslichen Konten erfasst.</p>'}
+    </div>
+    <div class="card">
+      <h2 style="margin-bottom:14px">💵 Dividenden ${jahr}</h2>
+      ${divRows.length ? `<div class="table-wrap"><table><thead><tr><th>Wertpapier</th><th>Typ</th><th class="num">Brutto</th><th class="num">Teilfrei</th><th class="num">Steuerpfl.</th></tr></thead><tbody>
+        ${divRows.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.typ}</td><td class="num">${eur(r.betrag)}</td><td class="num">${r.teilfrei}%</td><td class="num">${eur(r.steuerpflichtig)}</td></tr>`).join('')}
+        <tr style="font-weight:700;border-top:2px solid var(--text)"><td colspan="2">Summe Dividenden</td><td class="num">${eur(divSum)}</td><td></td><td class="num">${eur(divSteuerpfl)}</td></tr>
+      </tbody></table></div>` : `<p class="hint">Keine Dividenden für ${jahr} erfasst.</p>`}
+    </div>
+    <div class="card">
+      <h2 style="margin-bottom:14px">📋 Übertrag in Anlage KAP</h2>
+      <div class="tax-line"><span>Zeile 7 — Kapitalerträge (Summe)</span><span><strong>${eur(summeKap)}</strong></span></div>
+      <div class="tax-line"><span class="muted">davon Zinsen</span><span class="muted">${eur(zinsSum)}</span></div>
+      <div class="tax-line"><span class="muted">davon Dividenden (nach Teilfreistellung)</span><span class="muted">${eur(divSteuerpfl)}</span></div>
+      <div class="tax-line"><span>Sparerpauschbetrag (${settings.familienstand==='verheiratet'?'verheiratet':'ledig'})</span><span>− ${eur(fb)}</span></div>
+      <div class="tax-line total"><span>Steuerpflichtiger Betrag</span><span>${eur(Math.max(0, summeKap-fb))}</span></div>
+      <p class="hint" style="margin-top:14px">💡 <strong>Hinweis:</strong> Diese Werte sind eine Schätzung aus deinen App-Daten. Bitte mit den Jahressteuerbescheinigungen aller Banken/Depots abgleichen. Verluste, ausländische Quellensteuer und Vorabpauschalen sind hier nicht enthalten.</p>
+    </div>`;
+}
+
+/* ============================================================
    Vermögens-Verlauf (Monats-Snapshots + Chart)
    ============================================================ */
 function historyList(){ return (settings.extra?.history) || []; }
@@ -1790,7 +1996,9 @@ function renderPrognose(){
   const fix = fixAusgabenBis(monate);
   const kred = kreditRatenBis(monate);
   const hausbauOffen = gewerkeOffenSum();
-  const prognose = startCash + einkommen - fix - kred - hausbauOffen;
+  // Sparpläne nur abziehen, wenn Basis = Barvermögen (bei liquide bleibt das Geld im System)
+  const sparAbfluss = basis === 'konten' ? sparplaeneBis(monate) : 0;
+  const prognose = startCash + einkommen - fix - kred - hausbauOffen - sparAbfluss;
   const farbe = prognose >= 0 ? 'var(--success)' : 'var(--danger)';
 
   $('hb-prognose').style.display='block';
@@ -1805,6 +2013,7 @@ function renderPrognose(){
       <span>− Fixe Ausgaben über ${monate} Monate (Enddaten berücksichtigt)</span><span style="text-align:right;color:var(--danger)">− ${eur(fix)}</span>
       <span>− Kreditraten über ${monate} Monate</span><span style="text-align:right;color:var(--danger)">− ${eur(kred)}</span>
       <span>− Noch offene Hausbau-Ausgaben (alle Gewerke)</span><span style="text-align:right;color:var(--danger)">− ${eur(hausbauOffen)}</span>
+      ${sparAbfluss>0?`<span>− ETF-Sparpläne über ${monate} Monate</span><span style="text-align:right;color:var(--danger)">− ${eur(sparAbfluss)}</span>`:''}
       <span style="font-weight:700;border-top:1px solid currentColor;padding-top:6px">= Voraussichtlich verfügbar</span><span style="text-align:right;font-weight:700;border-top:1px solid currentColor;padding-top:6px">${eur(prognose)}</span>
     </div>`;
 }

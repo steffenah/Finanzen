@@ -1386,34 +1386,37 @@ function computeKredit(k) {
   } else { // anfängliche Tilgung in %
     rate = P * (zinsJ + w) / 100 / 12;
   }
-  // 2) Tilgungsplan abspulen
+  // 2) Tilgungsplan abspulen — Startdatum berücksichtigen
   const start = k.startdatum ? new Date(k.startdatum + '-01') : new Date();
   const now = new Date();
-  let monateVergangen = (now.getFullYear()-start.getFullYear())*12 + (now.getMonth()-start.getMonth());
-  if (monateVergangen < 0) monateVergangen = 0;
+  const diffMonate = (now.getFullYear()-start.getFullYear())*12 + (now.getMonth()-start.getMonth());
+  const monateGelaufen = Math.max(0, diffMonate);      // wie lange läuft er schon?
+  const monateBisStart = Math.max(0, -diffMonate);     // wie lange noch warten, bis er startet?
+  const gestartet = diffMonate >= 0;
   let warnung = null;
   if (rate > 0 && rate <= P*r + 0.0001) warnung = 'Rate deckt nur die Zinsen — keine Tilgung.';
   let balance = P, zinsenGezahlt = 0, getilgt = 0;
-  for (let m=0; m<monateVergangen && balance>0.005 && rate>0; m++) {
+  for (let m=0; m<monateGelaufen && balance>0.005 && rate>0; m++) {
     const zins = balance*r; let tilg = rate - zins;
     if (tilg <= 0) break;                 // läuft nie ab
     if (tilg > balance) tilg = balance;
     balance -= tilg; zinsenGezahlt += zins; getilgt += tilg;
   }
   const restschuld = Math.max(0, balance);
-  // 3) Restmonate bis 0
-  let b2 = balance, monateRest = 0;
+  // 3) Restmonate bis 0 (von heute aus) — inkl. Wartezeit bis Start
+  let b2 = balance, tilgMonate = 0;
   if (rate > 0) {
-    for (; b2 > 0.005 && monateRest < 1200; monateRest++) {
+    for (; b2 > 0.005 && tilgMonate < 1200; tilgMonate++) {
       const zins = b2*r; let tilg = rate - zins;
-      if (tilg <= 0) { monateRest = Infinity; break; }
+      if (tilg <= 0) { tilgMonate = Infinity; break; }
       if (tilg > b2) tilg = b2;
       b2 -= tilg;
     }
-  } else monateRest = Infinity;
+  } else tilgMonate = Infinity;
+  const monateRest = isFinite(tilgMonate) ? tilgMonate + monateBisStart : Infinity;
   let abbezahltDatum = null;
   if (isFinite(monateRest)) { const d = new Date(now); d.setMonth(d.getMonth()+monateRest); abbezahltDatum = d; }
-  return { rate, restschuld, getilgt, zinsenGezahlt, monateVergangen, monateRest, abbezahltDatum, warnung, ursprung:P };
+  return { rate, restschuld, getilgt, zinsenGezahlt, monateVergangen: monateGelaufen, monateBisStart, gestartet, monateRest, abbezahltDatum, warnung, ursprung:P };
 }
 
 function renderKredite() {
@@ -1423,11 +1426,14 @@ function renderKredite() {
   tb.innerHTML = list.map(k=>{
     const c = computeKredit(k);
     const abz = (isFinite(c.monateRest) && c.abbezahltDatum) ? c.abbezahltDatum.toLocaleDateString('de-DE',{month:'short',year:'numeric'}) : '∞';
-    return `<tr>
-      <td><strong>${esc(k.name)}</strong>${k.notiz?`<div class="hint">${esc(k.notiz)}</div>`:''}${c.warnung?`<div class="hint" style="color:var(--danger)">⚠️ ${esc(c.warnung)}</div>`:''}</td>
+    const ratenZelle = c.gestartet
+      ? eur(c.rate)
+      : `<span class="hint">ab ${new Date(k.startdatum+'-01').toLocaleDateString('de-DE',{month:'short',year:'numeric'})}</span><br>${eur(c.rate)}`;
+    return `<tr${!c.gestartet?' style="opacity:0.75"':''}>
+      <td><strong>${esc(k.name)}</strong>${k.notiz?`<div class="hint">${esc(k.notiz)}</div>`:''}${c.warnung?`<div class="hint" style="color:var(--danger)">⚠️ ${esc(c.warnung)}</div>`:''}${!c.gestartet?`<div class="hint">📅 startet erst</div>`:''}</td>
       <td class="num">${eur(c.restschuld)}</td>
       <td class="num">${pct(k.zinssatz)}</td>
-      <td class="num">${eur(c.rate)}</td>
+      <td class="num">${ratenZelle}</td>
       <td class="num">${abz}</td>
       <td><div class="row-actions">
         <button class="btn btn-ghost btn-sm" onclick="openKreditModal('${k.id}')">✏️</button>
@@ -1598,9 +1604,13 @@ function fixAusgabenBis(monate) {
 }
 function kreditRatenBis(monate) {
   let sum = 0;
-  const states = krediteList().map(k => { const c = computeKredit(k); return { balance:c.restschuld, rate:c.rate, r:(Number(k.zinssatz)||0)/100/12 }; });
+  const states = krediteList().map(k => {
+    const c = computeKredit(k);
+    return { balance:c.restschuld, rate:c.rate, r:(Number(k.zinssatz)||0)/100/12, startsInMonat: c.monateBisStart };
+  });
   for (let m=0; m<monate; m++) {
     for (const s of states) {
+      if (m < s.startsInMonat) continue;   // Kredit beginnt erst später
       if (s.balance > 0.005 && s.rate > 0) {
         const zins = s.balance * s.r;
         let tilg = s.rate - zins;
@@ -1665,7 +1675,7 @@ function ausgabeAktiv(a){
   return true;
 }
 function fixAusgabenMonat(){ return ausgabenList().filter(ausgabeAktiv).reduce((s,a)=> s + ausgabeProMonat(a), 0); }
-function kreditRatenMonat(){ return krediteList().reduce((s,k)=>{ const c = computeKredit(k); return s + (c.restschuld>0.005 ? c.rate : 0); }, 0); }
+function kreditRatenMonat(){ return krediteList().reduce((s,k)=>{ const c = computeKredit(k); return s + (c.gestartet && c.restschuld>0.005 ? c.rate : 0); }, 0); }
 function restMonateBis(bis){
   if (!bis) return null;
   const now = new Date(), d = new Date(bis);

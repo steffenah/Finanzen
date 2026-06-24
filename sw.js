@@ -1,5 +1,5 @@
 // Service Worker — Offline-Fähigkeit + Auto-Update
-const CACHE = 'finanzen-v2';
+const CACHE = 'finanzen-v3-wow';
 const ASSETS = ['./', './index.html', './manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {

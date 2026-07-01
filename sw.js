@@ -1,5 +1,5 @@
 // Service Worker — Offline-Fähigkeit + Auto-Update
-const CACHE = 'finanzen-v5-10y-slider';
+const CACHE = 'finanzen-v6-inflation';
 const ASSETS = ['./', './index.html', './manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {

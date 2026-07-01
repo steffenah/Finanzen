@@ -530,6 +530,11 @@
         </div>
       </div>
       <div class="card">
+        <h2 style="margin-bottom:6px">📈 Jährliche Anpassung (Inflation & Gehalt)</h2>
+        <p class="hint" style="margin-bottom:12px">Wird jedes Jahr auf fixe Ausgaben <em>und</em> auf das Netto-Einkommen angewandt. So bleibt die reale Kaufkraft in der Prognose etwa konstant. Typisch: 2 – 3 %. Auf 0 setzen für keine Anpassung.</p>
+        <div class="form-group"><label>Anpassungsrate pro Jahr (%)</label><input id="set-inflation" type="number" step="0.1" min="0" max="20" placeholder="z.B. 2"></div>
+      </div>
+      <div class="card">
         <h2 style="margin-bottom:6px">Automatischer Kurs-/Dividenden-Abruf</h2>
         <p class="hint" style="margin-bottom:12px">Kostenlosen API-Schlüssel bei <strong>alphavantage.co/support/#api-key</strong> holen (gratis, ohne Kreditkarte). Limit: ~25 Abrufe/Tag — für eine monatliche Prüfung reicht das.</p>
         <div class="form-group"><label>Alpha-Vantage API-Schlüssel</label><input id="set-avkey" placeholder="z.B. ABCD1234…"></div>
@@ -1214,8 +1219,8 @@ function prognoseAtMonat(m) {
   }
   const hausbauProMonat = monateBisBauende > 0 ? hausbauOffen / monateBisBauende : 0;
   const hausbauPay = Math.min(hausbauOffen, hausbauProMonat * m);
-  // Geldflüsse
-  const einkommen = haushaltNettoMonat() * m;
+  // Geldflüsse (Einkommen & fixe Ausgaben mit jährlicher Anpassung)
+  const einkommen = einkommenBis(m);
   const fix = fixAusgabenBis(m);
   const kredit = kreditRatenBis(m);
   const spar = sparplaeneBis(m);
@@ -1574,6 +1579,7 @@ function applySettingsToForm() {
   $('set-kirchensteuer').checked = !!settings.kirchensteuer;
   $('set-kirchensteuersatz').value = String(settings.kirchensteuersatz || 0.09);
   $('set-avkey').value = settings.av_api_key || '';
+  $('set-inflation').value = (settings.extra && settings.extra.inflation != null) ? settings.extra.inflation : '';
   toggleKistGroup();
   updatePinStatus();
 }
@@ -1588,6 +1594,12 @@ async function saveSettings() {
   };
   await sb.from('fin_einstellungen').update(payload).eq('id',1);
   Object.assign(settings, payload);
+  // Inflation/Anpassungsrate in extra ablegen
+  const infRaw = $('set-inflation').value.trim();
+  settings.extra = settings.extra || {};
+  if (infRaw === '') delete settings.extra.inflation;
+  else settings.extra.inflation = Math.max(0, Number(infRaw) || 0);
+  await persistExtra();
   renderDashboard(); renderSteuer(); toast('Einstellungen gespeichert ✓');
 }
 
@@ -2277,13 +2289,25 @@ function activeInMonth(a, date) {
   if (a.bis) { const bis = new Date(a.bis); if (bis < date) return false; }
   return true;
 }
+function inflationFactor(m) {
+  const r = Number((settings.extra||{}).inflation) || 0;
+  if (r <= 0) return 1;
+  return Math.pow(1 + r/100, Math.floor(m/12));
+}
 function fixAusgabenBis(monate) {
   let sum = 0;
   const today = new Date(); today.setDate(1); today.setHours(0,0,0,0);
   for (let m=0; m<monate; m++) {
     const d = new Date(today); d.setMonth(d.getMonth()+m+1);  // Monatsende-Sicht
-    sum += ausgabenList().filter(a => activeInMonth(a, d)).reduce((s,a)=>s+ausgabeProMonat(a),0);
+    const monatSum = ausgabenList().filter(a => activeInMonth(a, d)).reduce((s,a)=>s+ausgabeProMonat(a),0);
+    sum += monatSum * inflationFactor(m);
   }
+  return sum;
+}
+function einkommenBis(monate) {
+  const base = haushaltNettoMonat();
+  let sum = 0;
+  for (let m=0; m<monate; m++) sum += base * inflationFactor(m);
   return sum;
 }
 function kreditRatenBis(monate) {
@@ -2321,7 +2345,7 @@ function renderPrognose(){
   const wpSumme = wertpapiere.reduce((s,w)=> s + wpWert(w), 0);
   const startCash = basis === 'liquide' ? (kontenSumme + wpSumme) : kontenSumme;
   const einkommenMonat = haushaltNettoMonat();
-  const einkommen = einkommenMonat * monate;
+  const einkommen = einkommenBis(monate);
   const fix = fixAusgabenBis(monate);
   const kred = kreditRatenBis(monate);
   const hausbauOffen = gewerkeOffenSum();

@@ -1,5 +1,5 @@
 // Service Worker — Offline-Fähigkeit + Auto-Update
-const CACHE = 'finanzen-v7-wp-import';
+const CACHE = 'finanzen-v8-wp-import-dedupe';
 const ASSETS = ['./', './index.html', './manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {

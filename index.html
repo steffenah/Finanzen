@@ -462,8 +462,9 @@
     <!-- WERTPAPIERE -->
     <section class="view" id="view-wertpapiere">
       <div class="view-head"><h1>📈 Aktien &amp; ETFs</h1>
-        <div style="display:flex;gap:8px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-ghost" onclick="fetchAllPrices()" id="btn-fetch-prices">🔄 Kurse abrufen</button>
+          <button class="btn btn-ghost" onclick="openWpImportModal()">📥 Importieren</button>
           <button class="btn btn-primary" onclick="openWpModal()">＋ Wertpapier hinzufügen</button>
         </div>
       </div>
@@ -741,6 +742,76 @@ Santander Bank | 100147.21 | 3.3"></textarea>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('wp-modal')">Abbrechen</button>
       <button class="btn btn-primary" onclick="saveWp()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Wertpapier-Import (CSV + Bild-OCR) -->
+<div class="modal-overlay" id="wp-import-modal">
+  <div class="modal" style="max-width:820px">
+    <div class="modal-head"><h2>📥 Wertpapiere importieren</h2><button class="modal-close" onclick="closeModal('wp-import-modal')">×</button></div>
+
+    <div style="display:flex;gap:6px;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:10px">
+      <button type="button" class="btn btn-ghost btn-sm" id="wp-tab-csv" onclick="wpImportTab('csv')">📄 CSV / Text</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="wp-tab-img" onclick="wpImportTab('img')">🖼️ Bild (OCR)</button>
+    </div>
+
+    <!-- CSV -->
+    <div id="wp-src-csv">
+      <p class="hint" style="margin-bottom:8px">CSV-Datei wählen <em>oder</em> Inhalt einfügen. Trenner (<code>;</code> / <code>,</code> / Tab / <code>|</code>) und Spalten (Name, ISIN, Anzahl, Kaufkurs, Kurs) werden automatisch erkannt — bei Bedarf unten anpassen.</p>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+        <input type="file" id="wp-csv-file" accept=".csv,.tsv,.txt" onchange="onWpCsvFile(event)">
+        <button class="btn btn-ghost btn-sm" onclick="parseWpCsv()">🔍 Analysieren</button>
+      </div>
+      <textarea id="wp-csv-text" style="min-height:120px;font-family:monospace;font-size:0.78rem" placeholder="Name;ISIN;Anzahl;Kaufkurs;Kurs&#10;Apple;US0378331005;10;150,25;180,90&#10;MSCI World;IE00B4L5Y983;42;70;85"></textarea>
+      <div id="wp-csv-map" style="display:none;margin-top:12px">
+        <p class="hint" style="margin-bottom:6px">Spalten-Zuordnung (leer = ignorieren):</p>
+        <div class="row" style="gap:6px">
+          <div class="form-group"><label>Name</label><select id="map-name"></select></div>
+          <div class="form-group"><label>ISIN</label><select id="map-isin"></select></div>
+          <div class="form-group"><label>Anzahl</label><select id="map-anzahl"></select></div>
+        </div>
+        <div class="row" style="gap:6px">
+          <div class="form-group"><label>Kaufkurs</label><select id="map-kaufkurs"></select></div>
+          <div class="form-group"><label>Akt. Kurs</label><select id="map-kurs"></select></div>
+          <div class="form-group"><label>&nbsp;</label>
+            <button class="btn btn-primary btn-sm" onclick="buildWpPreviewFromCsv()">➡️ Vorschau erzeugen</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bild / OCR -->
+    <div id="wp-src-img" style="display:none">
+      <p class="hint" style="margin-bottom:8px">Screenshot deines Depots hochladen — Text wird per OCR erkannt (Sprache: Deutsch, dauert 5-15 Sek. beim ersten Mal, danach schneller). Ergebnis kannst du unten korrigieren, bevor du auf „Positionen erkennen" klickst.</p>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+        <input type="file" id="wp-img-file" accept="image/*" onchange="onWpImgFile(event)">
+        <span id="wp-ocr-status" style="font-size:0.85rem;color:var(--muted)"></span>
+      </div>
+      <div id="wp-ocr-progress-wrap" style="display:none;background:var(--bg);border-radius:6px;height:8px;margin-bottom:8px;overflow:hidden">
+        <div id="wp-ocr-progress" style="background:var(--accent);height:100%;width:0%;transition:width 0.2s"></div>
+      </div>
+      <textarea id="wp-ocr-text" style="min-height:150px;font-family:monospace;font-size:0.78rem" placeholder="OCR-Text erscheint hier — du kannst ihn korrigieren, bevor die Positionen extrahiert werden."></textarea>
+      <div style="margin-top:8px">
+        <button class="btn btn-primary btn-sm" onclick="buildWpPreviewFromOcr()">➡️ Positionen erkennen & Vorschau</button>
+      </div>
+    </div>
+
+    <!-- Vorschau -->
+    <div id="wp-preview" style="display:none;margin-top:16px">
+      <h3 style="font-size:0.95rem;margin-bottom:8px">✅ Vorschau — Häkchen entfernen, um Zeilen zu überspringen</h3>
+      <div class="table-wrap" style="max-height:280px;overflow:auto">
+        <table style="font-size:0.82rem">
+          <thead><tr><th style="width:28px"></th><th>Name</th><th>ISIN</th><th>Typ</th><th class="num">Anzahl</th><th class="num">Kaufkurs</th><th class="num">Akt. Kurs</th></tr></thead>
+          <tbody id="wp-preview-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="form-error" id="wp-import-error"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('wp-import-modal')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="doWpImport()" id="wp-import-btn" disabled>Importieren</button>
     </div>
   </div>
 </div>
@@ -2462,6 +2533,265 @@ async function doImport() {
   const { error } = await sb.from('fin_konten').insert(rows);
   if (error) { showErr('import-error','Fehler beim Import: '+error.message); return; }
   closeModal('import-modal'); await reloadAll(); toast(rows.length+' Konten importiert ✓');
+}
+
+/* ============================================================
+   Wertpapier-Import: CSV + Bild-OCR
+   ============================================================ */
+let wpImportRows = [];       // aktuelle Preview-Rows
+let wpCsvParsed = null;      // { headers, rows, delim }
+
+function openWpImportModal() {
+  wpImportRows = []; wpCsvParsed = null;
+  $('wp-csv-text').value = ''; $('wp-csv-file').value = '';
+  $('wp-csv-map').style.display = 'none';
+  $('wp-ocr-text').value = ''; $('wp-img-file').value = '';
+  $('wp-ocr-status').textContent = ''; $('wp-ocr-progress-wrap').style.display = 'none';
+  $('wp-preview').style.display = 'none'; $('wp-preview-body').innerHTML = '';
+  $('wp-import-error').style.display = 'none';
+  $('wp-import-btn').disabled = true;
+  wpImportTab('csv');
+  openModal('wp-import-modal');
+}
+
+function wpImportTab(t) {
+  const isCsv = t === 'csv';
+  $('wp-src-csv').style.display = isCsv ? 'block' : 'none';
+  $('wp-src-img').style.display = isCsv ? 'none' : 'block';
+  $('wp-tab-csv').classList.toggle('btn-primary', isCsv);
+  $('wp-tab-csv').classList.toggle('btn-ghost', !isCsv);
+  $('wp-tab-img').classList.toggle('btn-primary', !isCsv);
+  $('wp-tab-img').classList.toggle('btn-ghost', isCsv);
+}
+
+function onWpCsvFile(ev) {
+  const f = ev.target.files?.[0]; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => { $('wp-csv-text').value = String(rd.result || ''); parseWpCsv(); };
+  rd.readAsText(f, 'utf-8');
+}
+
+function parseNumberDe(s) {
+  if (s == null) return 0;
+  let str = String(s).replace(/[€$\s]/g,'').trim();
+  if (!str) return 0;
+  // 1.234,56 → 1234.56 ; 1,234.56 → 1234.56 ; 12,3 → 12.3
+  const hasComma = str.includes(','), hasDot = str.includes('.');
+  if (hasComma && hasDot) {
+    if (str.lastIndexOf(',') > str.lastIndexOf('.')) str = str.replace(/\./g,'').replace(',', '.');
+    else str = str.replace(/,/g,'');
+  } else if (hasComma) {
+    str = str.replace(/\.(?=\d{3}\b)/g,'').replace(',', '.');
+  }
+  const n = parseFloat(str);
+  return isFinite(n) ? n : 0;
+}
+
+function parseCsvGeneric(text) {
+  const rawLines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if (!rawLines.length) return { headers:[], rows:[], delim:';' };
+  const cand = [';', '\t', '|', ','];
+  let delim = ';', best = 0;
+  for (const d of cand) {
+    const n = rawLines[0].split(d).length;
+    if (n > best) { best = n; delim = d; }
+  }
+  const parseLine = (line) => {
+    const out = []; let cur=''; let inQ=false;
+    for (let i=0;i<line.length;i++) {
+      const c = line[i];
+      if (c === '"') { inQ = !inQ; continue; }
+      if (c === delim && !inQ) { out.push(cur); cur=''; continue; }
+      cur += c;
+    }
+    out.push(cur);
+    return out.map(s=>s.trim());
+  };
+  return { headers: parseLine(rawLines[0]), rows: rawLines.slice(1).map(parseLine), delim };
+}
+
+function autoMapWpColumns(headers) {
+  const pat = {
+    name:     /^(name|bezeichnung|wertpapier|position|instrument|title|beschreibung)$/i,
+    isin:     /^(isin|wkn)$/i,
+    anzahl:   /(anzahl|st.ck|menge|quantity|shares|nominal|pieces)/i,
+    kaufkurs: /(kaufkurs|einstand|einkauf|avg|durchschnitt|buy|kauf)/i,
+    kurs:     /(kurs|current|akt|aktuell|preis|price|last|letzter)/i,
+  };
+  const map = { name:-1, isin:-1, anzahl:-1, kaufkurs:-1, kurs:-1 };
+  headers.forEach((h,i) => {
+    for (const f of Object.keys(pat)) {
+      if (map[f] === -1 && pat[f].test(h)) { map[f] = i; return; }
+    }
+  });
+  // Fallback: erste Textspalte = Name
+  if (map.name === -1 && headers.length) map.name = 0;
+  return map;
+}
+
+function parseWpCsv() {
+  $('wp-import-error').style.display = 'none';
+  const text = $('wp-csv-text').value;
+  if (!text.trim()) { showErr('wp-import-error','Bitte CSV-Text einfügen oder Datei wählen.'); return; }
+  const parsed = parseCsvGeneric(text);
+  if (!parsed.rows.length) { showErr('wp-import-error','Keine Datenzeilen erkannt.'); return; }
+  wpCsvParsed = parsed;
+  const map = autoMapWpColumns(parsed.headers);
+  ['name','isin','anzahl','kaufkurs','kurs'].forEach(f => {
+    const sel = $('map-'+f);
+    sel.innerHTML = '<option value="-1">— keine —</option>' +
+      parsed.headers.map((h,i)=>`<option value="${i}" ${map[f]===i?'selected':''}>${esc(h||('Spalte '+(i+1)))}</option>`).join('');
+  });
+  $('wp-csv-map').style.display = 'block';
+  buildWpPreviewFromCsv();
+}
+
+function buildWpPreviewFromCsv() {
+  if (!wpCsvParsed) return;
+  const idx = {
+    name:     parseInt($('map-name').value),
+    isin:     parseInt($('map-isin').value),
+    anzahl:   parseInt($('map-anzahl').value),
+    kaufkurs: parseInt($('map-kaufkurs').value),
+    kurs:     parseInt($('map-kurs').value),
+  };
+  const rows = wpCsvParsed.rows.map(r => {
+    const get = i => i >= 0 && i < r.length ? r[i] : '';
+    const isinRaw = String(get(idx.isin)||'').replace(/\s/g,'').toUpperCase();
+    return {
+      name: String(get(idx.name)||'').trim(),
+      isin: /^[A-Z]{2}[A-Z0-9]{9}\d$/.test(isinRaw) ? isinRaw : (isinRaw || ''),
+      typ:  'aktie',
+      anzahl:   parseNumberDe(get(idx.anzahl)),
+      kaufkurs: parseNumberDe(get(idx.kaufkurs)),
+      kurs:     parseNumberDe(get(idx.kurs)),
+      pick: true,
+    };
+  }).filter(r => r.name || r.isin || r.anzahl);
+  renderWpPreview(rows);
+}
+
+/* ---- Bild-OCR ---- */
+let tesseractPromise = null;
+function loadTesseract() {
+  if (tesseractPromise) return tesseractPromise;
+  tesseractPromise = new Promise((resolve, reject) => {
+    if (window.Tesseract) return resolve();
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Tesseract.js konnte nicht geladen werden (Offline?)'));
+    document.head.appendChild(s);
+  });
+  return tesseractPromise;
+}
+
+async function onWpImgFile(ev) {
+  const f = ev.target.files?.[0]; if (!f) return;
+  $('wp-import-error').style.display = 'none';
+  $('wp-ocr-status').textContent = 'Lade Bibliothek …';
+  try { await loadTesseract(); }
+  catch (e) { showErr('wp-import-error', e.message); $('wp-ocr-status').textContent=''; return; }
+  $('wp-ocr-status').textContent = 'Erkenne Text …';
+  $('wp-ocr-progress-wrap').style.display = 'block';
+  $('wp-ocr-progress').style.width = '0%';
+  try {
+    const { data: { text } } = await Tesseract.recognize(f, 'deu', {
+      logger: (m) => {
+        if (m.status === 'recognizing text') $('wp-ocr-progress').style.width = Math.round(m.progress*100)+'%';
+      }
+    });
+    $('wp-ocr-text').value = text || '';
+    $('wp-ocr-status').textContent = 'Fertig — bitte prüfen und dann Positionen erkennen.';
+    $('wp-ocr-progress').style.width = '100%';
+  } catch (e) {
+    showErr('wp-import-error','OCR fehlgeschlagen: '+ (e.message||e));
+    $('wp-ocr-status').textContent = '';
+  }
+}
+
+function buildWpPreviewFromOcr() {
+  const text = $('wp-ocr-text').value || '';
+  if (!text.trim()) { showErr('wp-import-error','OCR-Text ist leer.'); return; }
+  const rows = [];
+  const isinRe = /\b[A-Z]{2}[A-Z0-9]{9}\d\b/;
+  const numRe = /-?\d{1,3}(?:[.\s]\d{3})*(?:[,]\d+)?|-?\d+[,.]\d+|-?\d+/g;
+  for (const line of text.split(/\n/)) {
+    const l = line.trim();
+    if (l.length < 3) continue;
+    const isinMatch = l.match(isinRe);
+    const nums = l.match(numRe) || [];
+    if (!nums.length && !isinMatch) continue;
+    let name = l;
+    if (isinMatch) name = name.replace(isinMatch[0], '');
+    for (const n of nums) name = name.split(n).join(' ');
+    name = name.replace(/[€$%|·•]/g,' ').replace(/\s{2,}/g,' ').trim();
+    if (!name && !isinMatch) continue;
+    const vals = nums.map(parseNumberDe).filter(x => x > 0);
+    rows.push({
+      name: name || (isinMatch ? isinMatch[0] : ''),
+      isin: isinMatch ? isinMatch[0] : '',
+      typ: 'aktie',
+      anzahl:   vals[0] || 0,
+      kaufkurs: vals[1] || 0,
+      kurs:     vals[2] || 0,
+      pick: true,
+    });
+  }
+  if (!rows.length) { showErr('wp-import-error','Keine Positionen erkannt. Text prüfen/korrigieren und erneut versuchen.'); return; }
+  renderWpPreview(rows);
+}
+
+function renderWpPreview(rows) {
+  wpImportRows = rows;
+  const tb = $('wp-preview-body');
+  if (!rows.length) { tb.innerHTML = ''; $('wp-preview').style.display='none'; $('wp-import-btn').disabled=true; return; }
+  tb.innerHTML = rows.map((r,i) => `
+    <tr>
+      <td><input type="checkbox" data-i="${i}" ${r.pick?'checked':''} onchange="onWpPickChange(this)"></td>
+      <td><input data-i="${i}" data-f="name" value="${esc(r.name)}" oninput="onWpEdit(this)"></td>
+      <td><input data-i="${i}" data-f="isin" value="${esc(r.isin)}" oninput="onWpEdit(this)" style="width:120px;text-transform:uppercase"></td>
+      <td>
+        <select data-i="${i}" data-f="typ" onchange="onWpEdit(this)">
+          <option value="aktie" ${r.typ==='aktie'?'selected':''}>Aktie</option>
+          <option value="etf"   ${r.typ==='etf'?'selected':''}>ETF</option>
+        </select>
+      </td>
+      <td class="num"><input data-i="${i}" data-f="anzahl"   type="number" step="0.0001" value="${r.anzahl||''}"   oninput="onWpEdit(this)" style="width:90px"></td>
+      <td class="num"><input data-i="${i}" data-f="kaufkurs" type="number" step="0.01"   value="${r.kaufkurs||''}" oninput="onWpEdit(this)" style="width:90px"></td>
+      <td class="num"><input data-i="${i}" data-f="kurs"     type="number" step="0.01"   value="${r.kurs||''}"     oninput="onWpEdit(this)" style="width:90px"></td>
+    </tr>`).join('');
+  $('wp-preview').style.display = 'block';
+  updateWpImportBtn();
+}
+function onWpPickChange(el) { wpImportRows[+el.dataset.i].pick = el.checked; updateWpImportBtn(); }
+function onWpEdit(el) {
+  const r = wpImportRows[+el.dataset.i]; const f = el.dataset.f;
+  if (f === 'name' || f === 'isin' || f === 'typ') r[f] = el.value.trim();
+  else r[f] = parseNumberDe(el.value);
+  updateWpImportBtn();
+}
+function updateWpImportBtn() {
+  const n = wpImportRows.filter(r=>r.pick && r.name).length;
+  $('wp-import-btn').disabled = n === 0;
+  $('wp-import-btn').textContent = n>0 ? `Importieren (${n})` : 'Importieren';
+}
+
+async function doWpImport() {
+  const picked = wpImportRows.filter(r=>r.pick && r.name);
+  if (!picked.length) return;
+  const payload = picked.map(r => ({
+    name: r.name,
+    typ: r.typ || 'aktie',
+    teilfreistellung: r.typ === 'etf' ? 30 : 0,
+    isin: r.isin && /^[A-Z]{2}[A-Z0-9]{9}\d$/.test(r.isin) ? r.isin : null,
+    anzahl: r.anzahl || 0,
+    kaufkurs: r.kaufkurs || 0,
+    aktueller_kurs: r.kurs > 0 ? r.kurs : null,
+  }));
+  const { error } = await sb.from('fin_wertpapiere').insert(payload);
+  if (error) { showErr('wp-import-error','Fehler beim Import: '+ (error.message||error)); return; }
+  closeModal('wp-import-modal'); await reloadAll(); toast(picked.length + ' Wertpapiere importiert ✓');
 }
 
 /* ============================================================
